@@ -1,0 +1,66 @@
+.eco-choice-badge {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: #f0fdf4;
+  border: 1px solid #16a34a;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  max-width: 300px;
+}
+
+.eco-score {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.score-label {
+  color: #166534;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.score-value {
+  background-color: #16a34a;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 14px;
+  min-width: 48px;
+  text-align: center;
+}
+
+/* Animations */
+.eco-choice-badge {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .eco-choice-badge {
+    background-color: #022c22;
+    border-color: #15803d;
+  }
+
+  .score-label {
+    color: #4ade80;
+  }
+
+  .score-value {
+    background-color: #15803d;
+  }
+} 
