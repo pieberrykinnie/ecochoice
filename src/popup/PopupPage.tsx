@@ -64,17 +64,24 @@ export default function PopupPage() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
       if (!tab.id) return
 
-      // Inject the content script and get analysis results
-      const [result] = await chrome.scripting.executeScript<[], AnalysisResult>({
-        target: { tabId: tab.id },
-        func: analyzeProduct
-      })
-
-      if (!result?.result) {
-        throw new Error('Failed to get analysis results')
+      // First check if we're on an Amazon product page
+      if (!tab.url?.includes('amazon')) {
+        throw new Error('Not an Amazon product page')
       }
 
-      const analysis = result.result
+      // Inject the content script and get analysis results
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: analyzeProduct,
+        world: 'MAIN' // Execute in the main world to access page's DOM
+      })
+
+      // Check if we got valid results
+      if (!results || results.length === 0 || !results[0].result) {
+        throw new Error('Failed to analyze product')
+      }
+
+      const analysis = results[0].result
       
       // Update stats with actual analysis data
       const newStats = {
@@ -91,8 +98,9 @@ export default function PopupPage() {
       
     } catch (error) {
       console.error('Analysis failed:', error)
-    } finally {
+      // Keep the popup open on error
       setIsAnalyzing(false)
+      // TODO: Show error message to user
     }
   }
 
@@ -172,22 +180,84 @@ export default function PopupPage() {
 function analyzeProduct(): AnalysisResult {
   // Extract product information based on the current URL
   function extractAmazonProduct(): AmazonProduct {
-    const title = document.querySelector('#productTitle')?.textContent?.trim() || ''
-    const price = document.querySelector('.a-price .a-offscreen')?.textContent || ''
-    const description = document.querySelector('#productDescription p')?.textContent?.trim() || ''
-    const features = Array.from(document.querySelectorAll('#feature-bullets li span'))
+    // Try different selectors for product title
+    const title = 
+      document.querySelector('#productTitle')?.textContent?.trim() ||
+      document.querySelector('.product-title-word-break')?.textContent?.trim() ||
+      ''
+
+    // Try different selectors for price
+    const price = 
+      document.querySelector('.a-price .a-offscreen')?.textContent?.trim() ||
+      document.querySelector('#price_inside_buybox')?.textContent?.trim() ||
+      document.querySelector('#priceblock_ourprice')?.textContent?.trim() ||
+      ''
+
+    // Try different selectors for description
+    const description = 
+      document.querySelector('#productDescription p')?.textContent?.trim() ||
+      document.querySelector('#feature-bullets')?.textContent?.trim() ||
+      ''
+
+    // Get product features
+    const features = [
+      ...Array.from(document.querySelectorAll('#feature-bullets li span')),
+      ...Array.from(document.querySelectorAll('.a-unordered-list .a-list-item'))
+    ]
       .map(el => el.textContent?.trim())
       .filter((text): text is string => text !== undefined && text !== null)
+
+    // Try different selectors for specifications
+    const specRows = [
+      ...Array.from(document.querySelectorAll('#productDetails_techSpec_section_1 tr')),
+      ...Array.from(document.querySelectorAll('#productDetails_detailBullets_sections1 tr')),
+      ...Array.from(document.querySelectorAll('.product-facts-detail tr'))
+    ]
+
     const specifications = Object.fromEntries(
-      Array.from(document.querySelectorAll('#productDetails_techSpec_section_1 tr')).map(row => [
-        row.querySelector('th')?.textContent?.trim() || '',
-        row.querySelector('td')?.textContent?.trim() || ''
+      specRows.map(row => [
+        row.querySelector('th, .label')?.textContent?.trim() || '',
+        row.querySelector('td, .value')?.textContent?.trim() || ''
       ])
     )
-    const materials = specifications['Material'] || specifications['Materials'] || ''
-    const packaging = specifications['Package Dimensions'] || ''
-    const weight = specifications['Item Weight'] || ''
-    const manufacturer = specifications['Manufacturer'] || ''
+
+    // Extract specific details
+    const materials = 
+      specifications['Material'] || 
+      specifications['Materials'] || 
+      specifications['Material Type'] ||
+      specifications['Material Composition'] ||
+      ''
+
+    const packaging = 
+      specifications['Package Dimensions'] ||
+      specifications['Product Dimensions'] ||
+      specifications['Item Package Dimensions'] ||
+      ''
+
+    const weight = 
+      specifications['Item Weight'] ||
+      specifications['Weight'] ||
+      specifications['Product Weight'] ||
+      ''
+
+    const manufacturer = 
+      specifications['Manufacturer'] ||
+      specifications['Brand'] ||
+      specifications['Sold by'] ||
+      ''
+
+    // Log extracted data for debugging
+    console.log('Extracted product data:', {
+      title,
+      price,
+      description: description.slice(0, 100) + '...',
+      featuresCount: features.length,
+      materials,
+      packaging,
+      weight,
+      manufacturer
+    })
 
     return {
       title,
