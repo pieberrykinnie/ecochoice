@@ -292,107 +292,140 @@ function analyzeProduct(): AnalysisResult {
     const sustainabilityIndicators = {
       materials: {
         positive: [
-          'bamboo', 'wood', 'organic', 'recycled', 'natural fiber', 'cotton', 'wool', 'hemp',
-          'biodegradable', 'compostable', 'renewable'
+          'bamboo', 'organic cotton', 'recycled materials', 'natural fiber', 'wool', 'hemp',
+          'biodegradable materials', 'compostable materials', 'renewable materials',
+          'FSC certified wood', 'reclaimed materials'
         ],
         negative: [
-          'plastic', 'synthetic', 'nylon', 'polyester', 'petroleum-based', 'pvc',
-          'non-recyclable', 'toxic', 'chemical'
+          'single-use plastic', 'non-biodegradable', 'synthetic materials', 'PVC material',
+          'petroleum-based plastic', 'non-recyclable materials', 'toxic materials',
+          'harmful chemicals', 'microplastics'
         ]
       },
       energy: {
         positive: [
-          'energy efficient', 'energy star certified', 'low power consumption', 'solar powered',
-          'rechargeable battery', 'power saving mode', 'eco mode'
+          'energy star certified', 'low power consumption', 'solar powered',
+          'energy efficient design', 'power saving features', 'eco mode available',
+          'renewable energy usage', 'carbon neutral certified'
         ],
         negative: [
-          'high power consumption', 'non-rechargeable batteries', 'energy intensive',
-          'constant power required', 'gaming performance', 'high performance mode'
+          'high power requirements', 'constant power needed', 'energy intensive operation',
+          'no power saving mode', 'inefficient energy usage', 'high performance mode only'
         ]
       },
       packaging: {
         positive: [
-          'minimal packaging', 'recyclable packaging', 'plastic-free packaging',
-          'eco-friendly packaging', 'sustainable packaging', 'biodegradable packaging'
+          'plastic-free packaging', 'minimal packaging design', 'recyclable packaging',
+          'biodegradable packaging', 'compostable packaging', 'reusable packaging',
+          'zero waste packaging', 'recycled packaging materials'
         ],
         negative: [
-          'excessive packaging', 'plastic packaging', 'non-recyclable packaging',
-          'styrofoam packaging', 'bubble wrap packaging'
+          'excessive plastic packaging', 'non-recyclable packaging', 'styrofoam packaging',
+          'single-use packaging', 'over-packaged', 'mixed material packaging'
         ]
       },
       manufacturing: {
         positive: [
-          'fair trade certified', 'locally made', 'handcrafted', 'ethically produced', 
-          'sustainable manufacturing', 'carbon neutral production', 'zero waste process'
+          'fair trade certified', 'locally manufactured', 'artisan crafted', 
+          'ethically produced', 'sustainable factory', 'carbon neutral production',
+          'zero waste manufacturing', 'renewable energy factory'
         ],
         negative: [
-          'mass produced', 'factory produced', 'overseas manufacturing',
-          'non-certified production', 'industrial process'
+          'overseas mass production', 'non-certified manufacturing', 'high waste process',
+          'toxic manufacturing', 'high pollution production', 'unethical labor practices'
         ]
       },
       durability: {
         positive: [
-          'long lasting construction', 'durable design', 'repairable components', 
-          'lifetime warranty', 'high quality materials', 'sturdy build'
+          'long lasting design', 'durable construction', 'repairable product', 
+          'lifetime warranty', 'high quality build', 'replaceable parts',
+          'modular design', 'easy to maintain'
         ],
         negative: [
-          'disposable design', 'single use product', 'temporary solution', 
-          'frequent replacement needed', 'fragile construction'
+          'disposable product', 'single use only', 'short lifespan',
+          'non-repairable design', 'frequent replacement needed', 'planned obsolescence'
         ]
       }
-    } as const
+    }
 
-    // Context-aware product type detection
+    // Context-aware product type detection with refined scoring
     const productTypes = {
       artificial_plant: {
-        keywords: ['artificial plant', 'faux plant', 'fake tree', 'artificial tree'],
+        keywords: ['artificial plant', 'faux plant', 'fake tree', 'artificial tree', 'silk plant'],
         score_adjustments: {
-          materials: -0.3,  // Synthetic materials penalty
-          energy: 0,       // No energy impact
-          durability: 0.2  // Moderate durability bonus
+          materials: -0.2,  // Reduced penalty for synthetic materials
+          energy: 0.2,     // Bonus for no water/maintenance needs
+          durability: 0.3  // Significant durability bonus
         },
         factors: {
-          positive: ['Long-term alternative to seasonal plants'],
-          negative: ['Made from synthetic materials']
+          positive: [
+            'Reduces water consumption',
+            'No pesticides or fertilizers needed',
+            'Long-term alternative to seasonal plants'
+          ],
+          negative: [
+            'Made from synthetic materials',
+            'Non-biodegradable components'
+          ]
         }
       },
       electronic: {
-        keywords: ['laptop', 'computer', 'electronic', 'device', 'gaming'],
+        keywords: ['laptop', 'computer', 'electronic', 'device', 'gaming', 'processor'],
         score_adjustments: {
-          materials: -0.2,  // E-waste concern
-          energy: -0.3,    // Energy consumption
-          durability: -0.1 // Obsolescence concern
+          materials: -0.3,  // E-waste concern
+          energy: -0.4,    // Significant energy impact
+          durability: -0.2 // Obsolescence concern
         },
         factors: {
           positive: [],
-          negative: ['Electronic waste impact', 'Ongoing energy consumption']
+          negative: [
+            'Contains hazardous electronic components',
+            'High energy consumption device',
+            'Limited lifespan due to tech advancement',
+            'Difficult to recycle completely'
+          ]
         }
       },
       digital_product: {
-        keywords: ['ebook', 'digital book', 'kindle book', 'pdf'],
+        keywords: ['ebook', 'digital book', 'kindle book', 'pdf', 'digital download'],
         score_adjustments: {
-          materials: 0.4,   // No physical materials
-          energy: -0.1     // Minimal device energy
+          materials: 0.5,   // Major bonus for no physical materials
+          energy: 0.3,     // Bonus for minimal energy use
+          packaging: 0.5,  // No physical packaging needed
+          durability: 0.4  // Digital durability bonus
         },
         factors: {
-          positive: ['Digital format eliminates physical waste'],
-          negative: ['Requires electronic device for use']
+          positive: [
+            'Zero physical materials used',
+            'No shipping or packaging required',
+            'Infinitely reproducible without waste',
+            'Reduces paper consumption'
+          ],
+          negative: [
+            'Minimal energy used for storage/delivery'
+          ]
         }
       },
       heating_cooling: {
-        keywords: ['heater', 'air conditioner', 'thermostat', 'hvac'],
+        keywords: ['heater', 'air conditioner', 'thermostat', 'hvac', 'heating', 'cooling'],
         score_adjustments: {
-          energy: -0.4,    // High energy use
-          materials: -0.2  // Electronic components
+          energy: -0.5,    // Major penalty for energy use
+          materials: -0.2,  // Penalty for electronic components
+          durability: -0.1  // Moderate durability concern
         },
         factors: {
           positive: [],
-          negative: ['High energy consumption appliance', 'Contains electronic components']
+          negative: [
+            'High energy consumption appliance',
+            'Contains electronic components',
+            'Regular maintenance required',
+            'Limited product lifespan'
+          ]
         }
       }
     }
 
-    // Analyze text content more carefully
+    // Analyze text content
     const allText = [
       product.title,
       product.description,
@@ -410,7 +443,7 @@ function analyzeProduct(): AnalysisResult {
       }
     }
 
-    // Apply product-specific adjustments
+    // Apply product-specific adjustments with more impact
     if (detectedType) {
       const typeConfig = productTypes[detectedType as keyof typeof productTypes]
       Object.entries(typeConfig.score_adjustments).forEach(([category, adjustment]) => {
@@ -420,77 +453,59 @@ function analyzeProduct(): AnalysisResult {
       factors.push(...typeConfig.factors.negative.map(f => `✗ ${f}`))
     }
 
-    // More careful keyword matching with context
+    // Analyze sustainability indicators with context
     Object.entries(sustainabilityIndicators).forEach(([category, keywords]) => {
       let categoryScore = 0
       
-      // Only add factors if we find exact phrases
       keywords.positive.forEach(keyword => {
         if (allText.includes(keyword)) {
-          categoryScore += 0.2
-          factors.push(`✓ Product ${category === 'manufacturing' ? 'uses' : 'features'} ${keyword}`)
+          categoryScore += 0.15 // Reduced individual impact
+          factors.push(`✓ Uses ${keyword}`)
         }
       })
 
       keywords.negative.forEach(keyword => {
         if (allText.includes(keyword)) {
-          categoryScore -= 0.2
-          factors.push(`✗ Product ${category === 'manufacturing' ? 'uses' : 'contains'} ${keyword}`)
+          categoryScore -= 0.25 // Increased penalty for negative factors
+          factors.push(`✗ Contains ${keyword}`)
         }
       })
 
       categoryScores[category as CategoryName] = Math.max(-1, Math.min(1, categoryScore))
     })
 
-    // ML preparation - collect features for future model
-    const mlFeatures = {
-      text_length: allText.length,
-      keyword_counts: Object.fromEntries(
-        Object.entries(sustainabilityIndicators).map(([category, keywords]) => [
-          category,
-          {
-            positive: keywords.positive.filter(k => allText.includes(k)).length,
-            negative: keywords.negative.filter(k => allText.includes(k)).length
-          }
-        ])
-      ),
-      product_type: detectedType,
-      price: parseFloat(product.price.replace(/[^0-9.]/g, '')) || 0,
-      has_certifications: allText.includes('certified') || allText.includes('certification'),
-      // Add more ML-relevant features here
-    }
-
-    // Calculate final score (future: replace with ML model prediction)
+    // Calculate weighted score with adjusted weights
     score = (
-      categoryScores.materials * 0.35 +
+      categoryScores.materials * 0.30 +
       categoryScores.energy * 0.25 +
       categoryScores.packaging * 0.15 +
       categoryScores.manufacturing * 0.15 +
-      categoryScores.durability * 0.10
+      categoryScores.durability * 0.15
     ) + 0.5
 
-    // Adjust thresholds
-    if (score > 0.5) score = 0.5 + (score - 0.5) * 0.8
-    if (score < 0.5) score = 0.5 - (0.5 - score) * 1.2
+    // Apply non-linear scaling to better differentiate scores
+    if (score > 0.5) {
+      score = 0.5 + Math.pow(score - 0.5, 1.2)
+    } else {
+      score = 0.5 - Math.pow(0.5 - score, 0.8)
+    }
 
     // Clamp final score
     score = Math.max(0, Math.min(1, score))
 
-    // Clean up and prioritize factors
-    factors = Array.from(new Set(factors)) // Remove duplicates using Array.from
+    // Prioritize and clean up factors
+    factors = Array.from(new Set(factors))
       .sort((a, b) => {
+        // Prioritize positive factors first
         if (a.startsWith('✓') && !b.startsWith('✓')) return -1
         if (!a.startsWith('✓') && b.startsWith('✓')) return 1
         return 0
       })
       .slice(0, 5)
 
-    // Log ML features for future training
-    console.log('ML Features:', mlFeatures)
-
     return {
       score,
-      factors: factors.slice(0, 5) // Keep top 5 most relevant factors
+      factors
     }
   }
 
