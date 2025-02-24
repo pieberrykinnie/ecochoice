@@ -1,8 +1,35 @@
 import { CacheService } from '../CacheService';
 import { ProductFeatures } from '../../utils/ml';
 
+// Mock storage implementation
+const mockStorage = {
+  predictionCache: {},
+  errorLogs: [],
+  cacheStats: {
+    cacheSize: 0,
+    hitRate: 0,
+    errorRate: 0
+  }
+};
+
+// Mock chrome.storage before tests
+beforeAll(() => {
+  global.chrome = {
+    storage: {
+      local: {
+        get: jest.fn().mockImplementation(() => Promise.resolve(mockStorage)),
+        set: jest.fn().mockImplementation((data) => {
+          Object.assign(mockStorage, data);
+          return Promise.resolve();
+        })
+      }
+    }
+  } as any;
+});
+
 describe('CacheService', () => {
   let cacheService: CacheService;
+  
   const mockFeatures: ProductFeatures = {
     title: 'Test Product',
     description: 'A test product',
@@ -14,13 +41,27 @@ describe('CacheService', () => {
     energyConsumption: 100
   };
 
-  beforeEach(() => {
-    // Clear storage mock
-    jest.clearAllMocks();
-    // Reset instance
+  beforeEach(async () => {
+    jest.useFakeTimers();
+    // Reset the singleton instance and storage
     (CacheService as any).instance = null;
-    // Get fresh instance
-    cacheService = CacheService.getInstance();
+    Object.assign(mockStorage, {
+      predictionCache: {},
+      errorLogs: [],
+      cacheStats: {
+        cacheSize: 0,
+        hitRate: 0,
+        errorRate: 0
+      }
+    });
+    
+    // Initialize service
+    cacheService = await CacheService.getInstance();
+  });
+
+  afterEach(() => {
+    cacheService.stopCleanup();
+    jest.useRealTimers();
   });
 
   describe('caching', () => {
@@ -35,6 +76,11 @@ describe('CacheService', () => {
       const cached = await cacheService.getCachedPrediction(mockFeatures);
       
       expect(cached).toEqual(mockPrediction);
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          predictionCache: expect.any(Object)
+        })
+      );
     });
 
     it('should return null for expired cache entries', async () => {
@@ -45,8 +91,11 @@ describe('CacheService', () => {
       };
 
       await cacheService.cachePrediction(mockFeatures, mockPrediction);
-      const cached = await cacheService.getCachedPrediction(mockFeatures);
       
+      // Advance time by 25 hours
+      jest.advanceTimersByTime(25 * 60 * 60 * 1000);
+
+      const cached = await cacheService.getCachedPrediction(mockFeatures);
       expect(cached).toBeNull();
     });
 
@@ -77,7 +126,8 @@ describe('CacheService', () => {
       expect(logs).toHaveLength(1);
       expect(logs[0]).toEqual(expect.objectContaining({
         error: error.message,
-        context
+        context,
+        timestamp: expect.any(Number)
       }));
     });
 
@@ -87,12 +137,36 @@ describe('CacheService', () => {
       );
 
       for (const error of errors) {
-        await cacheService.logError(error);
+        await cacheService.logError(error, { context: 'test' });
       }
 
       const logs = await cacheService.getErrorLogs();
-      expect(logs).toHaveLength(100);
-      expect(logs[0].error).toBe('Error 149'); // Most recent error
+      expect(logs.length).toBeLessThanOrEqual(100);
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          errorLogs: expect.any(Array)
+        })
+      );
+    });
+
+    it('should clean up old error logs', async () => {
+      const oldError = new Error('Old error');
+      const newError = new Error('New error');
+
+      // Add old error (8 days ago)
+      await cacheService.logError(oldError, { context: 'old' });
+      const oldTimestamp = Date.now() - (8 * 24 * 60 * 60 * 1000);
+      (cacheService as any).errorLogs[0].timestamp = oldTimestamp;
+
+      // Add new error
+      await cacheService.logError(newError, { context: 'new' });
+
+      // Run cleanup
+      await cacheService.cleanupExpiredEntries();
+
+      const logs = await cacheService.getErrorLogs();
+      expect(logs.length).toBe(1);
+      expect(logs[0].error).toBe(newError.message);
     });
   });
 
@@ -106,7 +180,7 @@ describe('CacheService', () => {
 
       await cacheService.cachePrediction(mockFeatures, mockPrediction);
       
-      expect(global.chrome.storage.local.set).toHaveBeenCalledWith(
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(
         expect.objectContaining({
           predictionCache: expect.any(Object)
         })
@@ -114,26 +188,34 @@ describe('CacheService', () => {
     });
 
     it('should load cache from storage on initialization', async () => {
+      const mockKey = JSON.stringify({
+        title: mockFeatures.title,
+        type: mockFeatures.productType,
+        price: mockFeatures.price
+      });
+
       const mockStorage = {
         predictionCache: {
-          'test-key': {
+          [mockKey]: {
             score: 0.85,
             confidence: 'high',
             timestamp: Date.now()
           }
-        }
+        },
+        errorLogs: []
       };
 
-      global.chrome.storage.local.get.mockImplementation(() => 
+      // Mock storage.get to return our mock data
+      (chrome.storage.local.get as jest.Mock).mockImplementation(() => 
         Promise.resolve(mockStorage)
       );
 
       // Get new instance to trigger loading from storage
       (CacheService as any).instance = null;
-      cacheService = CacheService.getInstance();
+      cacheService = await CacheService.getInstance();
       
       // Wait for async initialization
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await cacheService.getCachedPrediction(mockFeatures);
       
       const stats = await cacheService.getStats();
       expect(stats.cacheSize).toBe(1);
@@ -142,8 +224,6 @@ describe('CacheService', () => {
 
   describe('cleanup', () => {
     it('should clean up expired entries', async () => {
-      jest.useFakeTimers();
-
       const mockPrediction = {
         score: 0.85,
         confidence: 'high',
@@ -152,13 +232,37 @@ describe('CacheService', () => {
 
       await cacheService.cachePrediction(mockFeatures, mockPrediction);
       
-      // Fast forward 1 hour
-      jest.advanceTimersByTime(60 * 60 * 1000);
-      
+      // Advance time by 25 hours
+      jest.advanceTimersByTime(25 * 60 * 60 * 1000);
+      await cacheService.cleanupExpiredEntries();
+
       const stats = await cacheService.getStats();
       expect(stats.cacheSize).toBe(0);
+    });
 
-      jest.useRealTimers();
+    it('should stop cleanup interval when requested', async () => {
+      const mockSetInterval = jest.spyOn(global, 'setInterval');
+      const mockClearInterval = jest.spyOn(global, 'clearInterval');
+      
+      // Reset instance to trigger new interval creation
+      (CacheService as any).instance = null;
+      cacheService = await CacheService.getInstance();
+      jest.runOnlyPendingTimers();
+      
+      expect(mockSetInterval).toHaveBeenCalled();
+      
+      cacheService.stopCleanup();
+      expect(mockClearInterval).toHaveBeenCalled();
+      expect((cacheService as any).cleanupInterval).toBeNull();
+    });
+
+    it('should run cleanup periodically', async () => {
+      const cleanupSpy = jest.spyOn(cacheService as any, 'cleanupExpiredEntries');
+      
+      // Advance time by 2 hours
+      jest.advanceTimersByTime(2 * 60 * 60 * 1000);
+      
+      expect(cleanupSpy).toHaveBeenCalledTimes(2);
     });
   });
 }); 

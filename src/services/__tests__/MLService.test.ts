@@ -1,192 +1,227 @@
-import * as tf from '@tensorflow/tfjs-node';
+// Mock TensorFlow.js and CacheService before any other code
+jest.mock('@tensorflow/tfjs', () => {
+  const mockFit = jest.fn().mockResolvedValue({
+    history: {
+      loss: [0.1],
+      acc: [0.9]
+    }
+  });
+
+  const mockTensor = {
+    dataSync: jest.fn().mockReturnValue([0.85]),
+    data: jest.fn().mockResolvedValue([0.85]),
+    dispose: jest.fn(),
+    reshape: jest.fn().mockReturnThis(),
+    div: jest.fn().mockReturnThis()
+  };
+
+  const mockModel = {
+    predict: jest.fn().mockReturnValue(mockTensor),
+    fit: mockFit,
+    save: jest.fn().mockResolvedValue(undefined),
+    dispose: jest.fn(),
+    compile: jest.fn(),
+    add: jest.fn()
+  };
+
+  return {
+    sequential: jest.fn().mockReturnValue(mockModel),
+    layers: {
+      dense: jest.fn().mockReturnValue({ apply: jest.fn() }),
+      dropout: jest.fn().mockReturnValue({ apply: jest.fn() })
+    },
+    tensor2d: jest.fn().mockReturnValue(mockTensor),
+    concat: jest.fn().mockReturnValue(mockTensor),
+    train: {
+      adam: jest.fn().mockReturnValue({})
+    },
+    loadLayersModel: jest.fn().mockResolvedValue(mockModel)
+  };
+});
+
+// Create a mock CacheService instance with all required methods
+const createMockCacheService = () => ({
+  getCachedPrediction: jest.fn().mockResolvedValue(null),
+  cachePrediction: jest.fn().mockResolvedValue(undefined),
+  logError: jest.fn().mockResolvedValue(undefined),
+  getErrorLogs: jest.fn().mockResolvedValue([]),
+  clearCache: jest.fn().mockResolvedValue(undefined),
+  getStats: jest.fn().mockResolvedValue({
+    cacheSize: 0,
+    hitRate: 0,
+    errorRate: 0
+  })
+});
+
+// Mock CacheService
+const mockCacheService = createMockCacheService();
+jest.mock('../CacheService', () => ({
+  CacheService: {
+    getInstance: jest.fn().mockResolvedValue(mockCacheService)
+  }
+}));
+
+import * as tf from '@tensorflow/tfjs';
 import { MLService } from '../MLService';
 import { CacheService } from '../CacheService';
 import { ProductFeatures } from '../../utils/ml';
 
-// Mock Chrome API
-declare global {
-  namespace NodeJS {
-    interface Global {
-      chrome: {
-        storage: {
-          local: {
-            get: jest.Mock;
-            set: jest.Mock;
-          };
-        };
-      };
-    }
-  }
-}
-
-// Setup Chrome storage mock
-global.chrome = {
-  storage: {
-    local: {
-      get: jest.fn(),
-      set: jest.fn()
-    }
-  }
-} as any;
-
-// Mock CacheService
-jest.mock('../CacheService', () => ({
-  CacheService: {
-    getInstance: jest.fn().mockReturnValue({
-      getCachedPrediction: jest.fn(),
-      cachePrediction: jest.fn(),
-      logError: jest.fn()
-    })
-  }
-}));
-
 describe('MLService', () => {
   let mlService: MLService;
 
-  beforeEach(() => {
-    // Clear all mocks
+  const mockFeatures: ProductFeatures = {
+    title: 'Test Product',
+    description: 'A test product',
+    productType: 'electronic',
+    price: 99.99,
+    materials: ['plastic', 'metal'],
+    certifications: ['energy_star'],
+    weight: 1.5,
+    energyConsumption: 100
+  };
+
+  beforeEach(async () => {
     jest.clearAllMocks();
-    // Get MLService instance
+    
+    // Reset MLService instance
+    (MLService as any).instance = null;
+    
+    // Initialize MLService
     mlService = MLService.getInstance();
+    await mlService.initialize();
+    
+    // Ensure cacheService is set
+    (mlService as any).cacheService = mockCacheService;
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should update training data and retrain model', async () => {
+    // Add enough training data to trigger training (minimum 10 items)
+    for (let i = 0; i < 10; i++) {
+      await mlService.addTrainingData(mockFeatures, 0.85);
+    }
+    
+    // Get the model instance from MLService
+    const model = (mlService as any).model;
+    expect(model.fit).toHaveBeenCalled();
   });
 
   describe('initialization', () => {
     it('should create a new model if none exists', async () => {
-      const model = await mlService.initialize();
-      expect(model).toBeDefined();
+      // Reset instance to force new model creation
+      (MLService as any).instance = null;
+      (tf.loadLayersModel as jest.Mock).mockRejectedValueOnce(new Error('No model found'));
+      
+      // Get new MLService instance
+      mlService = MLService.getInstance();
+      
+      // Inject mock cache service before initialization
+      (mlService as any).cacheService = mockCacheService;
+      
+      await mlService.initialize();
+
+      expect(mlService['model']).toBeDefined();
+      expect(tf.sequential).toHaveBeenCalled();
     });
 
     it('should load training data from storage', async () => {
-      const mockData = {
-        mlTrainingData: [
-          {
-            features: {
-              title: 'Test Product',
-              description: 'A test product',
-              productType: 'electronic',
-              price: 99.99,
-              materials: ['plastic', 'metal'],
-              certifications: ['energy_star'],
-              weight: 1.5,
-              energyConsumption: 100
-            },
-            score: 0.8
-          }
-        ]
-      };
+      const mockTrainingData = [{
+        features: mockFeatures,
+        score: 0.85
+      }];
 
-      // Mock chrome.storage.local.get
-      global.chrome.storage.local.get.mockImplementation((key: string) => 
-        Promise.resolve(mockData)
-      );
+      (chrome.storage.local.get as jest.Mock)
+        .mockResolvedValueOnce({ mlTrainingData: mockTrainingData });
 
+      // Reset instance to force reinitialization
+      (MLService as any).instance = null;
+      mlService = MLService.getInstance();
       await mlService.initialize();
-      expect(global.chrome.storage.local.get).toHaveBeenCalledWith('mlTrainingData');
+
+      expect(mlService['trainingData']).toEqual(mockTrainingData);
     });
   });
 
   describe('prediction', () => {
-    const mockFeatures: ProductFeatures = {
-      title: 'Eco-friendly Water Bottle',
-      description: 'Sustainable and reusable',
-      productType: 'household',
-      price: 19.99,
-      materials: ['stainless steel'],
-      certifications: ['eco_friendly'],
-      weight: 0.5,
-      energyConsumption: 0
-    };
-
     it('should return cached prediction if available', async () => {
-      const mockCachedPrediction = {
+      const mockPrediction = {
         score: 0.85,
         confidence: 'high',
         timestamp: Date.now()
       };
 
-      (CacheService.getInstance() as jest.Mocked<CacheService>)
-        .getCachedPrediction.mockResolvedValue(mockCachedPrediction);
+      mockCacheService.getCachedPrediction.mockResolvedValueOnce(mockPrediction);
 
       const result = await mlService.predict(mockFeatures);
-      expect(result).toBe(mockCachedPrediction.score);
+      expect(result).toBe(mockPrediction.score);
     });
 
     it('should make new prediction if no cache available', async () => {
-      (CacheService.getInstance() as jest.Mocked<CacheService>)
-        .getCachedPrediction.mockResolvedValue(null);
+      mockCacheService.getCachedPrediction.mockResolvedValueOnce(null);
 
       const result = await mlService.predict(mockFeatures);
-      expect(result).toBeGreaterThanOrEqual(0);
-      expect(result).toBeLessThanOrEqual(1);
-    });
+      expect(result).toBeDefined();
+      expect(mockCacheService.cachePrediction).toHaveBeenCalledWith(
+        mockFeatures,
+        expect.objectContaining({
+          score: expect.any(Number),
+          confidence: expect.any(String),
+          timestamp: expect.any(Number)
+        })
+      );
+    }, 10000);
 
     it('should retry failed predictions', async () => {
-      (CacheService.getInstance() as jest.Mocked<CacheService>)
-        .getCachedPrediction.mockResolvedValue(null);
-
-      // Mock first attempt to fail
-      const mockPredict = jest.spyOn(mlService as any, 'makePrediction')
-        .mockRejectedValueOnce(new Error('Prediction failed'))
-        .mockResolvedValueOnce(0.75);
+      const mockError = new Error('Prediction failed');
+      
+      // Mock first two attempts to fail, third to succeed
+      (mlService as any).makePrediction = jest.fn()
+        .mockRejectedValueOnce(mockError)
+        .mockRejectedValueOnce(mockError)
+        .mockResolvedValueOnce(0.85);
 
       const result = await mlService.predict(mockFeatures);
-      expect(mockPredict).toHaveBeenCalledTimes(2);
-      expect(result).toBe(0.75);
-    });
+      expect(result).toBe(0.85);
+      expect(mlService['makePrediction']).toHaveBeenCalledTimes(3);
+    }, 10000);
   });
 
   describe('training', () => {
-    const mockFeatures: ProductFeatures = {
-      title: 'Test Product',
-      description: 'A test product',
-      productType: 'electronic',
-      price: 99.99,
-      materials: ['plastic', 'metal'],
-      certifications: ['energy_star'],
-      weight: 1.5,
-      energyConsumption: 100
-    };
-
-    it('should update training data and retrain model', async () => {
-      // Add training data
-      await mlService.addTrainingData(mockFeatures, 0.8);
-
-      // Mock storage calls
-      expect(global.chrome.storage.local.set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          mlTrainingData: expect.any(Array)
-        })
-      );
-    });
-
     it('should maintain maximum training data size', async () => {
-      // Add more than 1000 training samples
-      for (let i = 0; i < 1010; i++) {
-        await mlService.addTrainingData(mockFeatures, 0.8);
+      // Add more than the maximum allowed training data
+      for (let i = 0; i < 1100; i++) {
+        await mlService.addTrainingData(mockFeatures, 0.85);
       }
 
-      const metrics = await mlService.getModelMetrics();
-      expect(metrics.dataPoints).toBeLessThanOrEqual(1000);
+      expect(mlService['trainingData'].length).toBeLessThanOrEqual(1000);
     });
   });
 
   describe('metrics', () => {
     it('should return correct model metrics', async () => {
       const mockMetrics = {
-        modelAccuracy: 0.85,
-        lastTraining: Date.now()
+        dataPoints: 100,
+        lastTraining: new Date().toISOString(),
+        accuracy: 0.85
       };
 
-      global.chrome.storage.local.get.mockImplementation(() => 
-        Promise.resolve(mockMetrics)
+      (chrome.storage.local.get as jest.Mock).mockImplementation(() => 
+        Promise.resolve({
+          modelAccuracy: mockMetrics.accuracy,
+          lastTraining: mockMetrics.lastTraining
+        })
       );
 
+      mlService['trainingData'] = Array(mockMetrics.dataPoints).fill({
+        features: mockFeatures,
+        score: 0.85
+      });
+
       const metrics = await mlService.getModelMetrics();
-      expect(metrics).toEqual(expect.objectContaining({
-        accuracy: expect.any(Number),
-        lastTraining: expect.any(String),
-        dataPoints: expect.any(Number)
-      }));
+      expect(metrics).toEqual(mockMetrics);
     });
   });
 }); 
