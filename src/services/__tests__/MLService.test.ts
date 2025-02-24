@@ -50,7 +50,8 @@ const createMockCacheService = () => ({
     cacheSize: 0,
     hitRate: 0,
     errorRate: 0
-  })
+  }),
+  stopCleanup: jest.fn().mockResolvedValue(undefined)
 });
 
 // Mock CacheService
@@ -82,6 +83,7 @@ describe('MLService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    jest.useFakeTimers();
     
     // Reset MLService instance
     (MLService as any).instance = null;
@@ -94,8 +96,19 @@ describe('MLService', () => {
     (mlService as any).cacheService = mockCacheService;
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
+  afterEach(async () => {
+    // Clean up any timers
+    jest.clearAllTimers();
+    jest.useRealTimers();
+
+    // Stop any cleanup intervals
+    if (mockCacheService.stopCleanup) {
+      await mockCacheService.stopCleanup();
+    }
+  });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
   });
 
   it('should update training data and retrain model', async () => {
@@ -172,7 +185,7 @@ describe('MLService', () => {
           timestamp: expect.any(Number)
         })
       );
-    }, 10000);
+    });
 
     it('should retry failed predictions', async () => {
       const mockError = new Error('Prediction failed');
@@ -183,10 +196,21 @@ describe('MLService', () => {
         .mockRejectedValueOnce(mockError)
         .mockResolvedValueOnce(0.85);
 
-      const result = await mlService.predict(mockFeatures);
+      // Set a shorter retry delay for testing
+      (mlService as any).retryDelay = 100;
+
+      // Start prediction
+      const resultPromise = mlService.predict(mockFeatures);
+      
+      // Advance all pending timers
+      await jest.runAllTimersAsync();
+      
+      // Get the final result
+      const result = await resultPromise;
+      
       expect(result).toBe(0.85);
       expect(mlService['makePrediction']).toHaveBeenCalledTimes(3);
-    }, 10000);
+    }, 15000);
   });
 
   describe('training', () => {

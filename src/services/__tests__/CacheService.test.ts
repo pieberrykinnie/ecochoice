@@ -59,9 +59,17 @@ describe('CacheService', () => {
     cacheService = await CacheService.getInstance();
   });
 
-  afterEach(() => {
-    cacheService.stopCleanup();
+  afterEach(async () => {
+    // Stop cleanup interval and clear timers
+    if (cacheService) {
+      await cacheService.stopCleanup();
+    }
+    jest.clearAllTimers();
     jest.useRealTimers();
+  });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
   });
 
   describe('caching', () => {
@@ -247,11 +255,10 @@ describe('CacheService', () => {
       // Reset instance to trigger new interval creation
       (CacheService as any).instance = null;
       cacheService = await CacheService.getInstance();
-      jest.runOnlyPendingTimers();
       
       expect(mockSetInterval).toHaveBeenCalled();
       
-      cacheService.stopCleanup();
+      await cacheService.stopCleanup();
       expect(mockClearInterval).toHaveBeenCalled();
       expect((cacheService as any).cleanupInterval).toBeNull();
     });
