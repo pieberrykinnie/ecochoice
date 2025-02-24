@@ -387,7 +387,7 @@ function analyzeProduct(): AnalysisResult {
 
   // Add close button
   const closeButton = document.createElement('button')
-  closeButton.innerHTML = '×' // Using × symbol for close
+  closeButton.innerHTML = '&times;' // Using proper multiplication symbol
   closeButton.style.cssText = `
     position: absolute;
     top: 8px;
@@ -398,14 +398,15 @@ function analyzeProduct(): AnalysisResult {
     border: none;
     background: rgba(255, 255, 255, 0.2);
     color: white;
-    font-size: 20px;
-    line-height: 0;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 24px;
+    font-weight: 300;
+    display: grid;
+    place-items: center;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding-bottom: 2px;
     transition: background-color 0.2s ease;
+    padding: 0;
+    margin: 0;
   `
   closeButton.addEventListener('mouseover', () => {
     closeButton.style.background = 'rgba(255, 255, 255, 0.3)'
@@ -467,14 +468,16 @@ function analyzeProduct(): AnalysisResult {
         border: none;
         background: rgba(255, 255, 255, 0.2);
         color: white;
-        font-size: 20px;
-        line-height: 0;
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        font-size: 24px;
+        font-weight: 300;
+        display: grid;
+        place-items: center;
         cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding-bottom: 2px;
-      ">×</button>
+        transition: background-color 0.2s ease;
+        padding: 0;
+        margin: 0;
+      ">&times;</button>
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
         <span style="font-size: 18px;">🌱</span>
         <span style="font-weight: 600;">Sustainability Score: ${Math.round(analysis.score * 100)}%</span>
