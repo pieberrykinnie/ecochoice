@@ -14,33 +14,69 @@ interface ErrorLog {
 
 export class CacheService {
   private static instance: CacheService;
-  private cache: Map<string, CachedPrediction> = new Map();
-  private errorLogs: ErrorLog[] = [];
+  private cache: Map<string, CachedPrediction>;
+  private errorLogs: ErrorLog[];
+  private cleanupInterval: NodeJS.Timeout | null;
   private readonly MAX_CACHE_SIZE = 1000;
   private readonly CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
   private readonly MAX_ERROR_LOGS = 100;
+  private initialized: boolean = false;
 
   private constructor() {
-    this.loadFromStorage();
-    this.setupPeriodicCleanup();
+    this.cache = new Map();
+    this.errorLogs = [];
+    this.cleanupInterval = null;
   }
 
-  static getInstance(): CacheService {
+  public static async getInstance(): Promise<CacheService> {
     if (!CacheService.instance) {
       CacheService.instance = new CacheService();
+      await CacheService.instance.initialize();
     }
     return CacheService.instance;
   }
 
-  private async loadFromStorage(): Promise<void> {
-    const data = await chrome.storage.local.get(['predictionCache', 'errorLogs']);
-    
-    if (data.predictionCache) {
-      this.cache = new Map(Object.entries(data.predictionCache));
+  private async initialize(): Promise<void> {
+    if (!this.initialized) {
+      await this.loadFromStorage();
+      this.setupPeriodicCleanup();
+      this.initialized = true;
     }
-    
-    if (data.errorLogs) {
-      this.errorLogs = data.errorLogs;
+  }
+
+  private setupPeriodicCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    // Clean up expired cache entries every hour
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupExpiredEntries();
+    }, 60 * 60 * 1000);
+  }
+
+  public stopCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+  }
+
+  private async loadFromStorage(): Promise<void> {
+    try {
+      const data = await chrome.storage.local.get(['predictionCache', 'errorLogs']);
+      
+      if (data.predictionCache) {
+        this.cache = new Map(Object.entries(data.predictionCache));
+      }
+      
+      if (data.errorLogs) {
+        this.errorLogs = data.errorLogs;
+      }
+    } catch (error) {
+      console.error('Failed to load from storage:', error);
+      // Initialize with empty state on error
+      this.cache = new Map();
+      this.errorLogs = [];
     }
   }
 
@@ -51,21 +87,20 @@ export class CacheService {
     });
   }
 
-  private setupPeriodicCleanup(): void {
-    // Clean up expired cache entries every hour
-    setInterval(() => {
-      this.cleanupExpiredEntries();
-    }, 60 * 60 * 1000);
-  }
-
-  private cleanupExpiredEntries(): void {
+  public async cleanupExpiredEntries(): Promise<void> {
     const now = Date.now();
-    for (const [key, value] of this.cache.entries()) {
-      if (now - value.timestamp > this.CACHE_EXPIRY) {
-        this.cache.delete(key);
-      }
-    }
-    this.saveToStorage();
+    const expiredKeys = Array.from(this.cache.entries())
+      .filter(([_, { timestamp }]) => now - timestamp > 24 * 60 * 60 * 1000)
+      .map(([key]) => key);
+
+    expiredKeys.forEach(key => this.cache.delete(key));
+
+    // Also clean up old error logs
+    this.errorLogs = this.errorLogs.filter(
+      log => now - log.timestamp <= 7 * 24 * 60 * 60 * 1000
+    );
+
+    await this.saveToStorage();
   }
 
   private generateCacheKey(features: ProductFeatures): string {
