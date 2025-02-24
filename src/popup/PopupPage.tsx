@@ -5,6 +5,22 @@ interface TabInfo {
   title: string
 }
 
+interface AmazonProduct {
+  title: string
+  price: string
+  description: string
+  features: string[]
+  materials: string
+  packaging: string
+  weight: string
+  manufacturer: string
+}
+
+interface SustainabilityAnalysis {
+  score: number
+  factors: string[]
+}
+
 export default function PopupPage() {
   const [currentTab, setCurrentTab] = useState<TabInfo | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -141,20 +157,117 @@ export default function PopupPage() {
 
 // This function will be injected into the page
 function analyzeProduct() {
-  // Extract product information
-  const productInfo = {
-    title: document.querySelector('h1')?.textContent?.trim() || '',
-    price: document.querySelector('[data-price]')?.textContent || '',
-    description: document.querySelector('[data-description]')?.textContent || '',
+  // Extract product information based on the current URL
+  function extractAmazonProduct(): AmazonProduct {
+    const title = document.querySelector('#productTitle')?.textContent?.trim() || ''
+    const price = document.querySelector('.a-price .a-offscreen')?.textContent || ''
+    const description = document.querySelector('#productDescription p')?.textContent?.trim() || ''
+    const features = Array.from(document.querySelectorAll('#feature-bullets li span'))
+      .map(el => el.textContent?.trim())
+      .filter((text): text is string => text !== undefined && text !== null)
+    const specifications = Object.fromEntries(
+      Array.from(document.querySelectorAll('#productDetails_techSpec_section_1 tr')).map(row => [
+        row.querySelector('th')?.textContent?.trim() || '',
+        row.querySelector('td')?.textContent?.trim() || ''
+      ])
+    )
+    const materials = specifications['Material'] || specifications['Materials'] || ''
+    const packaging = specifications['Package Dimensions'] || ''
+    const weight = specifications['Item Weight'] || ''
+    const manufacturer = specifications['Manufacturer'] || ''
+
+    return {
+      title,
+      price,
+      description,
+      features,
+      materials,
+      packaging,
+      weight,
+      manufacturer
+    }
   }
 
-  // Remove any existing badges
-  const existingBadge = document.getElementById('eco-choice-badge')
-  if (existingBadge) {
-    existingBadge.remove()
+  // Analyze sustainability based on product attributes
+  function analyzeSustainability(product: AmazonProduct): SustainabilityAnalysis {
+    let score = 0.5 // Base score
+    let factors = []
+    
+    // Keywords that indicate sustainability
+    const sustainableKeywords = {
+      positive: [
+        'organic', 'recycled', 'sustainable', 'eco-friendly', 'biodegradable',
+        'compostable', 'renewable', 'natural', 'bamboo', 'solar', 'energy efficient',
+        'water saving', 'fair trade', 'local', 'recyclable'
+      ],
+      negative: [
+        'plastic', 'disposable', 'battery', 'batteries', 'petroleum',
+        'non-recyclable', 'toxic', 'chemical', 'synthetic'
+      ]
+    }
+
+    // Check materials
+    const allText = [
+      product.title,
+      product.description,
+      ...product.features,
+      product.materials
+    ].join(' ').toLowerCase()
+
+    // Count sustainable keywords
+    let positiveCount = 0
+    sustainableKeywords.positive.forEach(keyword => {
+      if (allText.includes(keyword)) {
+        positiveCount++
+        factors.push(`✓ Contains ${keyword} materials/features`)
+      }
+    })
+    score += (positiveCount * 0.1)
+
+    // Count negative keywords
+    let negativeCount = 0
+    sustainableKeywords.negative.forEach(keyword => {
+      if (allText.includes(keyword)) {
+        negativeCount++
+        factors.push(`✗ Contains ${keyword} materials/features`)
+      }
+    })
+    score -= (negativeCount * 0.1)
+
+    // Check packaging
+    if (product.packaging) {
+      if (product.packaging.toLowerCase().includes('minimal') || 
+          product.packaging.toLowerCase().includes('recyclable')) {
+        score += 0.1
+        factors.push('✓ Eco-friendly packaging')
+      }
+    }
+
+    // Check manufacturer sustainability commitment
+    if (product.manufacturer) {
+      const manufacturerLower = product.manufacturer.toLowerCase()
+      if (manufacturerLower.includes('eco') || 
+          manufacturerLower.includes('green') || 
+          manufacturerLower.includes('sustainable')) {
+        score += 0.1
+        factors.push('✓ Sustainable manufacturer')
+      }
+    }
+
+    // Clamp score between 0 and 1
+    score = Math.max(0, Math.min(1, score))
+
+    return {
+      score,
+      factors: factors.slice(0, 5) // Limit to top 5 factors
+    }
   }
 
-  // Create container for notifications
+  // Extract product data
+  const product = extractAmazonProduct()
+  const analysis = analyzeSustainability(product)
+
+  // Create notification UI
   const container = document.createElement('div')
   container.id = 'eco-choice-badge'
   container.style.cssText = `
@@ -174,28 +287,30 @@ function analyzeProduct() {
   badge.style.cssText = `
     background: #16a34a;
     color: white;
-    padding: 12px 16px;
-    border-radius: 8px;
+    padding: 16px;
+    border-radius: 12px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     font-size: 14px;
     font-weight: 500;
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    gap: 12px;
     opacity: 0;
     transform: translateY(-10px);
     transition: all 0.3s ease;
+    max-width: 300px;
   `
 
   // Add loading spinner
   const spinner = document.createElement('div')
   spinner.style.cssText = `
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     border: 2px solid #ffffff;
     border-top: 2px solid transparent;
     border-radius: 50%;
     animation: spin 1s linear infinite;
+    margin: 0 auto;
   `
   const style = document.createElement('style')
   style.textContent = `
@@ -207,7 +322,7 @@ function analyzeProduct() {
   document.head.appendChild(style)
 
   badge.appendChild(spinner)
-  badge.appendChild(document.createTextNode('Analyzing product...'))
+  badge.appendChild(document.createTextNode('Analyzing product sustainability...'))
   container.appendChild(badge)
 
   // Animate in
@@ -216,18 +331,42 @@ function analyzeProduct() {
     badge.style.transform = 'translateY(0)'
   })
 
-  // Simulate analysis
+  // Show analysis results
   setTimeout(() => {
+    // Remove spinner
     spinner.remove()
-    badge.textContent = '✓ Analysis Complete!'
-    badge.style.background = '#059669'
-    
+
+    // Update badge content
+    badge.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+        <span style="font-size: 18px;">🌱</span>
+        <span style="font-weight: 600;">Sustainability Score: ${Math.round(analysis.score * 100)}%</span>
+      </div>
+      ${analysis.factors.length > 0 ? `
+        <div style="font-size: 13px; opacity: 0.9;">
+          ${analysis.factors.map(factor => `<div style="margin: 2px 0;">${factor}</div>`).join('')}
+        </div>
+      ` : ''}
+      <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">
+        Based on materials, packaging, and manufacturer data
+      </div>
+    `
+
+    // Update badge color based on score
+    badge.style.background = analysis.score > 0.7 ? '#059669' : 
+                           analysis.score > 0.4 ? '#ca8a04' : '#dc2626'
+
+    // Fade out after delay
     setTimeout(() => {
       badge.style.opacity = '0'
       badge.style.transform = 'translateY(-10px)'
       setTimeout(() => container.remove(), 300)
-    }, 2000)
+    }, 5000)
   }, 1500)
 
-  return productInfo
+  return {
+    productInfo: product,
+    sustainabilityScore: analysis.score,
+    factors: analysis.factors
+  }
 } 
