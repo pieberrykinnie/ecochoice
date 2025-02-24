@@ -276,73 +276,144 @@ function analyzeProduct(): AnalysisResult {
     let score = 0.5 // Base score
     let factors = []
     
-    // Keywords that indicate sustainability
-    const sustainableKeywords = {
-      positive: [
-        'organic', 'recycled', 'sustainable', 'eco-friendly', 'biodegradable',
-        'compostable', 'renewable', 'natural', 'bamboo', 'solar', 'energy efficient',
-        'water saving', 'fair trade', 'local', 'recyclable'
-      ],
-      negative: [
-        'plastic', 'disposable', 'battery', 'batteries', 'petroleum',
-        'non-recyclable', 'toxic', 'chemical', 'synthetic'
-      ]
-    }
+    type CategoryName = 'materials' | 'energy' | 'packaging' | 'manufacturing' | 'durability'
+    type CategoryScores = Record<CategoryName, number>
+    
+    // Enhanced keywords that indicate sustainability
+    const sustainabilityIndicators = {
+      materials: {
+        positive: [
+          'bamboo', 'wood', 'organic', 'recycled', 'natural', 'cotton', 'wool', 'hemp',
+          'biodegradable', 'compostable', 'renewable'
+        ],
+        negative: [
+          'plastic', 'synthetic', 'nylon', 'polyester', 'petroleum', 'pvc',
+          'non-recyclable', 'toxic', 'chemical'
+        ]
+      },
+      energy: {
+        positive: [
+          'energy efficient', 'energy star', 'low power', 'solar powered',
+          'rechargeable', 'power saving'
+        ],
+        negative: [
+          'high power consumption', 'battery operated', 'batteries required'
+        ]
+      },
+      packaging: {
+        positive: [
+          'minimal packaging', 'recyclable packaging', 'plastic-free packaging',
+          'eco packaging', 'sustainable packaging'
+        ],
+        negative: [
+          'excessive packaging', 'plastic packaging', 'non-recyclable packaging'
+        ]
+      },
+      manufacturing: {
+        positive: [
+          'fair trade', 'local', 'handmade', 'ethically made', 'sustainable factory',
+          'carbon neutral', 'zero waste', 'eco friendly'
+        ],
+        negative: [
+          'overseas production', 'mass produced', 'factory made'
+        ]
+      },
+      durability: {
+        positive: [
+          'long lasting', 'durable', 'repairable', 'lifetime warranty',
+          'high quality', 'sturdy'
+        ],
+        negative: [
+          'disposable', 'single use', 'temporary', 'replacement needed'
+        ]
+      }
+    } as const
 
-    // Check materials
+    // Check all text content
     const allText = [
       product.title,
       product.description,
       ...product.features,
-      product.materials
+      product.materials,
+      product.manufacturer
     ].join(' ').toLowerCase()
 
-    // Count sustainable keywords
-    let positiveCount = 0
-    sustainableKeywords.positive.forEach(keyword => {
-      if (allText.includes(keyword)) {
-        positiveCount++
-        factors.push(`✓ Contains ${keyword} materials/features`)
-      }
-    })
-    score += (positiveCount * 0.1)
+    // Category-specific scoring
+    let categoryScores: CategoryScores = {
+      materials: 0,
+      energy: 0,
+      packaging: 0,
+      manufacturing: 0,
+      durability: 0
+    }
 
-    // Count negative keywords
-    let negativeCount = 0
-    sustainableKeywords.negative.forEach(keyword => {
-      if (allText.includes(keyword)) {
-        negativeCount++
-        factors.push(`✗ Contains ${keyword} materials/features`)
-      }
-    })
-    score -= (negativeCount * 0.1)
+    // Analyze each category
+    Object.entries(sustainabilityIndicators).forEach(([category, keywords]) => {
+      let categoryScore = 0
+      
+      // Check positive indicators
+      keywords.positive.forEach(keyword => {
+        if (allText.includes(keyword)) {
+          categoryScore += 0.2
+          factors.push(`✓ ${category === 'manufacturing' ? 'Uses' : 'Contains'} ${keyword.replace(/-/g, ' ')}`)
+        }
+      })
 
-    // Check packaging
-    if (product.packaging) {
-      if (product.packaging.toLowerCase().includes('minimal') || 
-          product.packaging.toLowerCase().includes('recyclable')) {
-        score += 0.1
-        factors.push('✓ Eco-friendly packaging')
+      // Check negative indicators
+      keywords.negative.forEach(keyword => {
+        if (allText.includes(keyword)) {
+          categoryScore -= 0.2
+          factors.push(`✗ ${category === 'manufacturing' ? 'Uses' : 'Contains'} ${keyword.replace(/-/g, ' ')}`)
+        }
+      })
+
+      // Clamp category score
+      categoryScores[category as CategoryName] = Math.max(-1, Math.min(1, categoryScore))
+    })
+
+    // Product type specific adjustments
+    if (allText.includes('artificial') || allText.includes('faux')) {
+      // Artificial plants/decorations
+      categoryScores.durability += 0.3 // Longer lasting than real plants
+      factors.push('✓ Long-lasting alternative to natural products')
+    }
+    
+    if (allText.includes('electronic') || allText.includes('laptop') || allText.includes('device')) {
+      // Electronics
+      categoryScores.energy -= 0.2 // Base penalty for energy consumption
+      if (!allText.includes('energy efficient') && !allText.includes('energy star')) {
+        factors.push('✗ No energy efficiency certification')
       }
     }
 
-    // Check manufacturer sustainability commitment
-    if (product.manufacturer) {
-      const manufacturerLower = product.manufacturer.toLowerCase()
-      if (manufacturerLower.includes('eco') || 
-          manufacturerLower.includes('green') || 
-          manufacturerLower.includes('sustainable')) {
-        score += 0.1
-        factors.push('✓ Sustainable manufacturer')
-      }
+    if (allText.includes('book') || allText.includes('ebook')) {
+      // Digital products
+      categoryScores.materials += 0.4 // Favor digital over physical
+      factors.push('✓ Digital format reduces material waste')
     }
 
-    // Clamp score between 0 and 1
+    // Calculate final score with weighted categories
+    score = (
+      categoryScores.materials * 0.3 +
+      categoryScores.energy * 0.2 +
+      categoryScores.packaging * 0.15 +
+      categoryScores.manufacturing * 0.2 +
+      categoryScores.durability * 0.15
+    ) + 0.5 // Normalize to 0-1 range
+
+    // Clamp final score
     score = Math.max(0, Math.min(1, score))
+
+    // Sort factors by importance (✓ first, then ✗)
+    factors.sort((a, b) => {
+      if (a.startsWith('✓') && !b.startsWith('✓')) return -1
+      if (!a.startsWith('✓') && b.startsWith('✓')) return 1
+      return 0
+    })
 
     return {
       score,
-      factors: factors.slice(0, 5) // Limit to top 5 factors
+      factors: factors.slice(0, 5) // Keep top 5 most relevant factors
     }
   }
 
@@ -501,9 +572,10 @@ function analyzeProduct(): AnalysisResult {
       </div>
     `
 
-    // Update badge color based on score
-    badge.style.background = analysis.score > 0.7 ? '#059669' : 
-                           analysis.score > 0.4 ? '#ca8a04' : '#dc2626'
+    // Update badge color based on score with adjusted thresholds
+    badge.style.background = analysis.score > 0.65 ? '#059669' : // Green for >65%
+                           analysis.score > 0.35 ? '#ca8a04' : // Yellow for 35-65%
+                           '#dc2626' // Red for <35%
 
     // Add click handler for close button
     const closeBtn = document.getElementById('eco-choice-close')
