@@ -42,7 +42,7 @@ An AI-powered sustainable shopping assistant that helps users make environmental
 ### For Developers
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/ecochoice.git
+git clone https://github.com/pieberrykinnie/ecochoice.git
 cd ecochoice
 ```
 
@@ -214,4 +214,4 @@ MIT License - See [LICENSE](LICENSE) for details
 
 ## Support
 
-For support, please open an issue on GitHub or contact us at support@ecochoice.com 
+For support, please open an issue on GitHub or contact me at peter.vu298@gmail.com 
