@@ -108,15 +108,80 @@ async function analyzeProduct(product) {
   }
 }
 
+// Listen for installation
+chrome.runtime.onInstalled.addListener(() => {
+  // Initialize storage with default values
+  chrome.storage.local.set({
+    stats: {
+      analyzedProducts: 0,
+      averageScore: 0,
+      totalCO2Saved: 0
+    },
+    settings: {
+      autoAnalyze: true,
+      notificationsEnabled: true,
+      sustainabilityThreshold: 0.7
+    }
+  })
+})
+
+// Listen for tab updates
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    // Check if the URL matches supported e-commerce sites
+    const supportedSites = [
+      'amazon.com',
+      'etsy.com',
+      'ebay.com'
+    ]
+
+    const isProductPage = supportedSites.some(site => 
+      tab.url.includes(site) && tab.url.includes('/product')
+    )
+
+    if (isProductPage) {
+      // Notify the content script to analyze the page
+      chrome.tabs.sendMessage(tabId, { 
+        action: 'ANALYZE_PRODUCT',
+        url: tab.url
+      })
+    }
+  }
+})
+
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'analyzeProduct') {
-    analyzeProduct(request.product)
-      .then(result => sendResponse(result))
-      .catch(error => {
-        console.error('Analysis error:', error);
-        sendResponse({ error: 'Failed to analyze product' });
-      });
-    return true; // Required for async response
+  if (request.action === 'UPDATE_STATS') {
+    chrome.storage.local.get('stats', (data) => {
+      const currentStats = data.stats || {
+        analyzedProducts: 0,
+        averageScore: 0,
+        totalCO2Saved: 0
+      }
+
+      const newStats = {
+        analyzedProducts: currentStats.analyzedProducts + 1,
+        averageScore: (
+          (currentStats.averageScore * currentStats.analyzedProducts + request.score) /
+          (currentStats.analyzedProducts + 1)
+        ),
+        totalCO2Saved: currentStats.totalCO2Saved + request.co2Saved
+      }
+
+      chrome.storage.local.set({ stats: newStats })
+
+      // Show notification if score is below threshold
+      chrome.storage.local.get('settings', (settingsData) => {
+        const settings = settingsData.settings || { sustainabilityThreshold: 0.7 }
+        if (request.score < settings.sustainabilityThreshold) {
+          chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icons/icon128.png',
+            title: 'Low Sustainability Score',
+            message: 'We found some more sustainable alternatives for this product!'
+          })
+        }
+      })
+    })
   }
-}); 
+}) 
