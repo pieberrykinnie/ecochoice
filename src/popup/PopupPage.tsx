@@ -19,12 +19,14 @@ interface AmazonProduct {
 interface SustainabilityAnalysis {
   score: number
   factors: string[]
+  detectedType: string | null
 }
 
 interface AnalysisResult {
   productInfo: AmazonProduct
   sustainabilityScore: number
   factors: string[]
+  detectedType: string | null
 }
 
 export default function PopupPage() {
@@ -275,6 +277,7 @@ function analyzeProduct(): AnalysisResult {
   function analyzeSustainability(product: AmazonProduct): SustainabilityAnalysis {
     let score = 0.5 // Base score
     let factors: string[] = []
+    let detectedType: string | null = null
     
     type CategoryName = 'materials' | 'energy' | 'packaging' | 'manufacturing' | 'durability'
     type CategoryScores = Record<CategoryName, number>
@@ -409,7 +412,6 @@ function analyzeProduct(): AnalysisResult {
     }
 
     // Detect product type with more specific matching
-    let detectedType = null
     for (const [type, config] of Object.entries(productTypes)) {
       if (config.keywords.some(keyword => 
         allText.includes(keyword) || 
@@ -508,13 +510,49 @@ function analyzeProduct(): AnalysisResult {
 
     return {
       score,
-      factors
+      factors,
+      detectedType
     }
   }
 
   // Extract product data
   const product = extractAmazonProduct()
   const analysis = analyzeSustainability(product)
+
+  // Collect data for ML training
+  const trainingData = {
+    timestamp: new Date().toISOString(),
+    url: window.location.href,
+    product: {
+      title: product.title,
+      description: product.description,
+      features: product.features,
+      materials: product.materials,
+      manufacturer: product.manufacturer,
+      price: product.price
+    },
+    analysis: {
+      score: analysis.score,
+      factors: analysis.factors,
+      detectedType: analysis.detectedType
+    },
+    textFeatures: {
+      titleLength: product.title.length,
+      descriptionLength: product.description.length,
+      featureCount: product.features.length,
+      hasMaterials: Boolean(product.materials),
+      hasManufacturer: Boolean(product.manufacturer),
+      priceValue: parseFloat(product.price.replace(/[^0-9.]/g, '')) || 0
+    }
+  }
+
+  // Store training data
+  chrome.storage.local.get('mlTrainingData', (data) => {
+    const existingData = data.mlTrainingData || []
+    chrome.storage.local.set({
+      mlTrainingData: [...existingData, trainingData].slice(-1000) // Keep last 1000 entries
+    })
+  })
 
   // Create notification UI
   const container = document.createElement('div')
@@ -662,6 +700,12 @@ function analyzeProduct(): AnalysisResult {
           `).join('')}
         </div>
       ` : ''}
+      ${analysis.score < 0.65 ? `
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2);">
+          <div style="font-weight: 500; margin-bottom: 4px;">More Sustainable Alternatives:</div>
+          ${findAlternatives(product, analysis.detectedType)}
+        </div>
+      ` : ''}
       <div style="font-size: 12px; opacity: 0.8; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
         Based on materials, packaging, and manufacturer data
       </div>
@@ -692,6 +736,54 @@ function analyzeProduct(): AnalysisResult {
   return {
     productInfo: product,
     sustainabilityScore: analysis.score,
-    factors: analysis.factors
+    factors: analysis.factors,
+    detectedType: analysis.detectedType
   }
+}
+
+function findAlternatives(product: AmazonProduct, detectedType: string | null): string {
+  const searchQueries: Record<string, string[]> = {
+    electronic: [
+      'energy star certified laptop',
+      'refurbished laptop',
+      'eco friendly laptop'
+    ],
+    heating_cooling: [
+      'energy efficient heater',
+      'smart thermostat',
+      'eco mode heater'
+    ],
+    artificial_plant: [
+      'live indoor plant',
+      'low maintenance plant',
+      'native plant'
+    ],
+    trophy: [
+      'recycled trophy',
+      'wooden award',
+      'sustainable trophy'
+    ],
+    coffee_product: [
+      'organic fair trade coffee',
+      'locally roasted coffee',
+      'biodegradable coffee pods'
+    ]
+  }
+
+  const baseUrl = 'https://www.amazon.com/s?k='
+  const queries = detectedType && searchQueries[detectedType] 
+    ? searchQueries[detectedType]
+    : ['eco friendly', 'sustainable', 'environmentally friendly'].map(q => 
+        `${q} ${product.title.split(' ').slice(0, 3).join(' ')}`
+      )
+
+  return queries.map(q => 
+    `<a href="${baseUrl}${encodeURIComponent(q)}" target="_blank" style="
+      color: #4ade80;
+      text-decoration: none;
+      display: block;
+      margin: 4px 0;
+      font-size: 13px;
+    ">🔍 Find ${q}</a>`
+  ).join('')
 } 
