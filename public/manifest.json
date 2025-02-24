@@ -11,9 +11,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "*://*.amazon.com/*",
-    "*://*.etsy.com/*",
-    "*://*.ebay.com/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",

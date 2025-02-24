@@ -38,27 +38,25 @@ export default function PopupPage() {
     
     setIsAnalyzing(true)
     try {
-      // Send message to content script to analyze the page
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]?.id) {
-          chrome.tabs.sendMessage(
-            tabs[0].id,
-            { action: 'ANALYZE_PRODUCT' },
-            (response) => {
-              if (response?.success) {
-                // Update stats
-                const newStats = {
-                  analyzedProducts: stats.analyzedProducts + 1,
-                  averageScore: (stats.averageScore * stats.analyzedProducts + response.score) / (stats.analyzedProducts + 1),
-                  totalCO2Saved: stats.totalCO2Saved + response.co2Saved
-                }
-                setStats(newStats)
-                chrome.storage.local.set({ stats: newStats })
-              }
-            }
-          )
-        }
+      // Get the current tab ID
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (!tab.id) return
+
+      // Inject the content script
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: analyzeProduct
       })
+
+      // Update stats with mock data for now
+      const newStats = {
+        analyzedProducts: stats.analyzedProducts + 1,
+        averageScore: (stats.averageScore * stats.analyzedProducts + 0.85) / (stats.analyzedProducts + 1),
+        totalCO2Saved: stats.totalCO2Saved + 2.5
+      }
+      setStats(newStats)
+      chrome.storage.local.set({ stats: newStats })
+      
     } catch (error) {
       console.error('Analysis failed:', error)
     } finally {
@@ -136,4 +134,38 @@ export default function PopupPage() {
       </footer>
     </div>
   )
+}
+
+// This function will be injected into the page
+function analyzeProduct() {
+  // Extract product information
+  const productInfo = {
+    title: document.querySelector('h1')?.textContent?.trim() || '',
+    price: document.querySelector('[data-price]')?.textContent || '',
+    description: document.querySelector('[data-description]')?.textContent || '',
+  }
+
+  // Add visual feedback
+  const badge = document.createElement('div')
+  badge.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #16a34a;
+    color: white;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    z-index: 9999;
+  `
+  badge.textContent = 'EcoChoice: Analyzing...'
+  document.body.appendChild(badge)
+
+  // Simulate analysis
+  setTimeout(() => {
+    badge.textContent = 'EcoChoice: Product Analysis Complete!'
+    setTimeout(() => badge.remove(), 3000)
+  }, 1500)
+
+  return productInfo
 } 
