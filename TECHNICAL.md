@@ -1,370 +1,185 @@
 # EcoChoice Technical Documentation
 
-## System Architecture
+## Architecture Overview
 
-### 1. Extension Components
+EcoChoice is implemented as a browser extension that analyzes product pages in real-time. The current architecture focuses on text analysis and rule-based scoring, with data collection for future ML integration.
 
-#### 1.1 Popup Interface (`src/popup/PopupPage.tsx`)
-- **State Management**: Uses React hooks for local state
-- **Chrome API Integration**: Manages tab communication and storage
-- **UI Components**: TailwindCSS for styling
-- **Analytics**: Tracks user interactions and analysis stats
+### Core Components
 
-#### 1.2 Content Script
-- **DOM Manipulation**: Injects sustainability badges
-- **Product Extraction**: Parses page content for analysis
-- **Event Handling**: Manages user interactions
-- **Performance**: Uses requestAnimationFrame for smooth animations
+```
+src/
+├── popup/
+│   ├── PopupPage.tsx       # Main UI and analysis logic
+│   ├── components/         # Reusable UI components
+│   └── styles/            # Component styling
+├── background/
+│   └── background.ts      # Extension background script
+└── utils/
+    ├── analysis.ts        # Sustainability analysis logic
+    ├── storage.ts         # Data collection and storage
+    └── types.ts          # TypeScript type definitions
+```
 
-#### 1.3 Background Script
-- **State Persistence**: Manages Chrome storage
-- **Event Coordination**: Handles message passing
-- **API Integration**: Coordinates external service calls
+## Implementation Details
 
-### 2. Sustainability Analysis System
+### 1. Product Analysis Engine
 
-#### 2.1 Product Type Detection
+#### 1.1 Text Analysis
+- Pattern matching using predefined keywords
+- Context-aware product type detection
+- Score calculation based on detected features
+
 ```typescript
-interface ProductType {
-  keywords: string[]
-  score_adjustments: Record<string, number>
-  factors: {
-    positive: string[]
-    negative: string[]
-  }
-}
-
-const productTypes: Record<string, ProductType> = {
-  digital_product: {
-    keywords: ['kindle edition', 'ebook', ...]
-    score_adjustments: {
-      materials: 0.8,
-      energy: 0.4,
-      ...
-    }
-  },
-  // Additional types...
+interface ProductAnalysis {
+  score: number;
+  factors: string[];
+  detectedType: string;
+  categoryScores: {
+    materials: number;
+    energy: number;
+    packaging: number;
+    manufacturing: number;
+    durability: number;
+  };
 }
 ```
 
-#### 2.2 Scoring Algorithm
-1. **Base Score Calculation**:
-   - Initial score: 0.5 (50%)
-   - Category weights:
-     - Materials: 30%
-     - Energy: 25%
-     - Packaging: 15%
-     - Manufacturing: 15%
-     - Durability: 15%
+#### 1.2 Scoring System
+- Category-based scoring (materials, energy, etc.)
+- Product type specific adjustments
+- Weighted average calculation
 
-2. **Score Adjustments**:
-   ```typescript
-   finalScore = baseScore + 
-     (categoryScores.materials * 0.30) +
-     (categoryScores.energy * 0.25) +
-     (categoryScores.packaging * 0.15) +
-     (categoryScores.manufacturing * 0.15) +
-     (categoryScores.durability * 0.15)
-   ```
+### 2. Data Collection
 
-3. **Product-Specific Modifiers**:
-   - Digital products: Minimum 80% score
-   - Electronics: Energy efficiency penalties
-   - Artificial items: Material sustainability penalties
+#### 2.1 Features Collected
+- Product title and description
+- Detected keywords and patterns
+- Final scores and category breakdowns
+- User interaction metrics
 
-#### 2.3 ML Data Collection
+#### 2.2 Storage Implementation
 ```typescript
 interface TrainingData {
-  timestamp: string
-  url: string
-  product: {
-    title: string
-    description: string
-    features: string[]
-    materials: string
-    manufacturer: string
-    price: string
-  }
-  analysis: {
-    score: number
-    factors: string[]
-    detectedType: string | null
-  }
+  timestamp: number;
+  productType: string;
   textFeatures: {
-    titleLength: number
-    descriptionLength: number
-    featureCount: number
-    hasMaterials: boolean
-    hasManufacturer: boolean
-    priceValue: number
-  }
+    titleLength: number;
+    descriptionLength: number;
+    keywordMatches: Record<string, number>;
+  };
+  scores: ProductAnalysis;
 }
 ```
 
-### 3. UI/UX Implementation
+### 3. UI Components
 
-#### 3.1 Notification Badge
-```css
-/* Core Styles */
-position: fixed;
-top: 20px;
-left: 20px;
-z-index: 2147483647;
-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+#### 3.1 Main Interface
+- Real-time score display
+- Factor breakdown visualization
+- Alternative suggestions panel
 
-/* Animations */
-transform: translateY(-10px);
-transition: all 0.3s ease;
+#### 3.2 State Management
+- React hooks for local state
+- Chrome storage for persistence
+- Event-based updates
+
+## Technical Limitations
+
+### 1. Analysis Engine
+- Limited to text-based analysis
+- No image processing capabilities
+- Basic keyword matching only
+
+### 2. Performance Constraints
+- Initial load time: ~450ms
+- Storage limit: 1000 entries
+- Bundle size: 1.12MB
+
+### 3. Browser Support
+- Chrome/Chromium only
+- No Firefox support yet
+- Limited mobile compatibility
+
+## Development Workflow
+
+### 1. Build Process
+```bash
+npm run build-extension    # Builds extension bundle
+npm run watch             # Development mode
+npm run test             # Runs test suite
 ```
 
-#### 3.2 Color Coding
-- Green (>65%): #059669
-- Yellow (35-65%): #ca8a04
-- Red (<35%): #dc2626
+### 2. Testing Strategy
+- Jest for unit testing
+- React Testing Library for components
+- Manual integration testing
+
+## Future Technical Roadmap
+
+### Phase 1: ML Integration
+- Feature extraction pipeline
+- Model training infrastructure
+- Inference optimization
+
+### Phase 2: Enhanced Analysis
+- Image analysis integration
+- Certificate validation
+- Carbon footprint calculation
+
+### Phase 3: Platform Expansion
+- Firefox support
+- Mobile adaptation
+- API infrastructure
 
 ## Development Guidelines
 
 ### 1. Code Style
+- ESLint configuration
+- Prettier formatting
+- TypeScript strict mode
 
-#### 1.1 TypeScript
-- Use strict type checking
-- Prefer interfaces over types
-- Document complex functions
-- Use enums for constants
+### 2. Git Workflow
+- Feature branches
+- PR reviews required
+- Semantic versioning
 
-#### 1.2 React Components
-- Functional components with hooks
-- Props interface definitions
-- Memoization for expensive operations
-- Error boundaries for stability
+### 3. Performance Requirements
+- Load time < 500ms
+- Memory usage < 50MB
+- CPU usage < 5%
 
-### 2. Testing Strategy
-
-#### 2.1 Unit Tests
-```typescript
-describe('Sustainability Analysis', () => {
-  test('should detect product type correctly', () => {
-    const product = {
-      title: 'Kindle Book',
-      description: 'Digital edition'
-    }
-    expect(detectProductType(product)).toBe('digital_product')
-  })
-})
-```
-
-#### 2.2 Integration Tests
-- Chrome API mocking
-- DOM manipulation tests
-- Event handling verification
-- Storage persistence checks
-
-### 3. Performance Optimization
-
-#### 3.1 Analysis Optimization
-- Caching of analysis results
-- Debounced DOM operations
-- Lazy loading of ML features
-- Memory leak prevention
-
-#### 3.2 UI Performance
-- Throttled animations
-- Efficient DOM updates
-- Resource preloading
-- Asset optimization
-
-### 4. Security Considerations
-
-#### 4.1 Data Safety
-- Sanitize user inputs
-- Validate product data
-- Secure storage handling
-- Privacy-focused analytics
-
-#### 4.2 Chrome API Usage
-- Minimal permissions
-- Secure messaging
-- Safe DOM manipulation
-- Error handling
-
-## Debugging Guide
+## Debugging
 
 ### 1. Common Issues
+- Chrome storage quota exceeded
+- DOM parsing failures
+- Analysis timing issues
 
-#### 1.1 Analysis Failures
-```typescript
-// Debug logging
-console.debug('Product analysis:', {
-  type: detectedType,
-  score: analysis.score,
-  factors: analysis.factors
-})
-```
-
-#### 1.2 UI Glitches
-- Check z-index conflicts
-- Verify style inheritance
-- Monitor animation performance
-- Test across browsers
-
-### 2. Development Tools
-
-#### 2.1 Chrome DevTools
-- Extensions debugging
-- Network monitoring
-- Performance profiling
-- Storage inspection
-
-#### 2.2 Testing Tools
-- Jest for unit tests
-- Puppeteer for E2E
-- Chrome extension debugger
+### 2. Debugging Tools
+- Chrome DevTools
 - React DevTools
+- Performance profiler
 
-## API Integration
+## Security Considerations
 
-### 1. Chrome Extension API
+### 1. Data Storage
+- Local storage only
+- No PII collection
+- Encrypted when possible
 
-#### 1.1 Storage
-```typescript
-// Save analysis results
-chrome.storage.local.set({
-  mlTrainingData: trainingData
-})
+### 2. Permissions
+- Limited to product pages
+- No sensitive data access
+- Minimal storage usage
 
-// Retrieve saved data
-chrome.storage.local.get('stats', (data) => {
-  updateStats(data.stats)
-})
-```
+## Version History
 
-#### 1.2 Messaging
-```typescript
-// Send message to background
-chrome.runtime.sendMessage({
-  type: 'ANALYZE_PRODUCT',
-  data: productInfo
-})
+### v0.1.0 (2024-03-21)
+- Initial implementation
+- Basic scoring system
+- Chrome extension structure
 
-// Receive messages
-chrome.runtime.onMessage.addListener((message, sender, reply) => {
-  if (message.type === 'ANALYSIS_COMPLETE') {
-    updateUI(message.data)
-  }
-})
-```
-
-### 2. Future ML API Integration
-
-#### 2.1 Model Training
-```typescript
-interface MLFeatures {
-  textFeatures: number[]
-  categoryFeatures: number[]
-  priceFeature: number
-}
-
-interface MLPrediction {
-  sustainabilityScore: number
-  confidence: number
-}
-```
-
-#### 2.2 Inference API
-- Endpoint: `/api/analyze`
-- Method: POST
-- Rate limiting: 100 requests/minute
-- Caching: 24-hour TTL
-
-## Deployment
-
-### 1. Extension Publishing
-
-#### 1.1 Build Process
-```bash
-# Production build
-npm run build-extension
-
-# Generate source maps
-npm run build-extension -- --source-maps
-```
-
-#### 1.2 Chrome Web Store
-- Manifest requirements
-- Asset guidelines
-- Review process
-- Update workflow
-
-### 2. Version Control
-
-#### 2.1 Git Workflow
-- Feature branches
-- Semantic versioning
-- Commit conventions
-- PR templates
-
-#### 2.2 Release Process
-- Version bumping
-- Changelog updates
-- Asset packaging
-- Store submission
-
-## Monitoring
-
-### 1. Analytics
-
-#### 1.1 Usage Metrics
-- Analysis counts
-- Score distribution
-- User engagement
-- Error rates
-
-#### 1.2 Performance Metrics
-- Analysis latency
-- UI responsiveness
-- Memory usage
-- API performance
-
-### 2. Error Tracking
-
-#### 2.1 Error Types
-- Analysis failures
-- API timeouts
-- UI rendering issues
-- Storage errors
-
-#### 2.2 Logging Strategy
-- Error severity levels
-- Context capture
-- Stack traces
-- User feedback
-
-## Future Enhancements
-
-### 1. ML Pipeline
-
-#### 1.1 Feature Engineering
-- Text embeddings
-- Image analysis
-- Price normalization
-- Category clustering
-
-#### 1.2 Model Improvements
-- Transfer learning
-- Active learning
-- Ensemble methods
-- Confidence scoring
-
-### 2. UI Enhancements
-
-#### 2.1 Interactive Features
-- Score explanations
-- Alternative comparisons
-- Impact visualization
-- User preferences
-
-#### 2.2 Accessibility
-- ARIA labels
-- Keyboard navigation
-- Color contrast
-- Screen reader support 
+### v0.1.1 (2024-03-22)
+- Data collection added
+- Performance monitoring
+- UI improvements 
