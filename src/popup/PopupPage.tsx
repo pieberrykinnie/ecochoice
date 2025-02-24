@@ -21,6 +21,12 @@ interface SustainabilityAnalysis {
   factors: string[]
 }
 
+interface AnalysisResult {
+  productInfo: AmazonProduct
+  sustainabilityScore: number
+  factors: string[]
+}
+
 export default function PopupPage() {
   const [currentTab, setCurrentTab] = useState<TabInfo | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -58,21 +64,28 @@ export default function PopupPage() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
       if (!tab.id) return
 
-      // Update stats with mock data for now
+      // Inject the content script and get analysis results
+      const [result] = await chrome.scripting.executeScript<[], AnalysisResult>({
+        target: { tabId: tab.id },
+        func: analyzeProduct
+      })
+
+      if (!result?.result) {
+        throw new Error('Failed to get analysis results')
+      }
+
+      const analysis = result.result
+      
+      // Update stats with actual analysis data
       const newStats = {
         analyzedProducts: stats.analyzedProducts + 1,
-        averageScore: (stats.averageScore * stats.analyzedProducts + 0.85) / (stats.analyzedProducts + 1),
-        totalCO2Saved: stats.totalCO2Saved + 2.5
+        averageScore: (stats.averageScore * stats.analyzedProducts + analysis.sustainabilityScore) / (stats.analyzedProducts + 1),
+        // Estimate CO2 savings based on score improvement
+        totalCO2Saved: stats.totalCO2Saved + (analysis.sustainabilityScore > 0.7 ? 2.5 : 1.0)
       }
       setStats(newStats)
       chrome.storage.local.set({ stats: newStats })
 
-      // Inject the content script and close the popup
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: analyzeProduct
-      })
-      
       // Close the popup
       window.close()
       
@@ -156,7 +169,7 @@ export default function PopupPage() {
 }
 
 // This function will be injected into the page
-function analyzeProduct() {
+function analyzeProduct(): AnalysisResult {
   // Extract product information based on the current URL
   function extractAmazonProduct(): AmazonProduct {
     const title = document.querySelector('#productTitle')?.textContent?.trim() || ''
@@ -336,7 +349,7 @@ function analyzeProduct() {
     // Remove spinner
     spinner.remove()
 
-    // Update badge content
+    // Update badge content with detailed results
     badge.innerHTML = `
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
         <span style="font-size: 18px;">🌱</span>
@@ -344,10 +357,15 @@ function analyzeProduct() {
       </div>
       ${analysis.factors.length > 0 ? `
         <div style="font-size: 13px; opacity: 0.9;">
-          ${analysis.factors.map(factor => `<div style="margin: 2px 0;">${factor}</div>`).join('')}
+          ${analysis.factors.map(factor => `
+            <div style="margin: 4px 0; display: flex; align-items: center; gap: 6px;">
+              <span style="color: ${factor.startsWith('✓') ? '#4ade80' : '#f87171'}">${factor.startsWith('✓') ? '✓' : '✗'}</span>
+              <span>${factor.slice(2)}</span>
+            </div>
+          `).join('')}
         </div>
       ` : ''}
-      <div style="font-size: 12px; opacity: 0.8; margin-top: 4px;">
+      <div style="font-size: 12px; opacity: 0.8; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
         Based on materials, packaging, and manufacturer data
       </div>
     `
