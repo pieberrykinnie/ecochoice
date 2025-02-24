@@ -382,7 +382,43 @@ function analyzeProduct(): AnalysisResult {
     transform: translateY(-10px);
     transition: all 0.3s ease;
     max-width: 300px;
+    position: relative;
   `
+
+  // Add close button
+  const closeButton = document.createElement('button')
+  closeButton.innerHTML = '×' // Using × symbol for close
+  closeButton.style.cssText = `
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    border: none;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background-color 0.2s ease;
+  `
+  closeButton.addEventListener('mouseover', () => {
+    closeButton.style.background = 'rgba(255, 255, 255, 0.3)'
+  })
+  closeButton.addEventListener('mouseout', () => {
+    closeButton.style.background = 'rgba(255, 255, 255, 0.2)'
+  })
+  closeButton.addEventListener('click', () => {
+    badge.style.opacity = '0'
+    badge.style.transform = 'translateY(-10px)'
+    setTimeout(() => container.remove(), 300)
+  })
+  badge.appendChild(closeButton)
 
   // Add loading spinner
   const spinner = document.createElement('div')
@@ -421,6 +457,24 @@ function analyzeProduct(): AnalysisResult {
 
     // Update badge content with detailed results
     badge.innerHTML = `
+      <button id="eco-choice-close" style="
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 24px;
+        height: 24px;
+        border-radius: 12px;
+        border: none;
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      ">×</button>
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
         <span style="font-size: 18px;">🌱</span>
         <span style="font-weight: 600;">Sustainability Score: ${Math.round(analysis.score * 100)}%</span>
@@ -444,12 +498,21 @@ function analyzeProduct(): AnalysisResult {
     badge.style.background = analysis.score > 0.7 ? '#059669' : 
                            analysis.score > 0.4 ? '#ca8a04' : '#dc2626'
 
-    // Fade out after delay
-    setTimeout(() => {
-      badge.style.opacity = '0'
-      badge.style.transform = 'translateY(-10px)'
-      setTimeout(() => container.remove(), 300)
-    }, 5000)
+    // Add click handler for close button
+    const closeBtn = document.getElementById('eco-choice-close')
+    if (closeBtn) {
+      closeBtn.addEventListener('mouseover', () => {
+        closeBtn.style.background = 'rgba(255, 255, 255, 0.3)'
+      })
+      closeBtn.addEventListener('mouseout', () => {
+        closeBtn.style.background = 'rgba(255, 255, 255, 0.2)'
+      })
+      closeBtn.addEventListener('click', () => {
+        badge.style.opacity = '0'
+        badge.style.transform = 'translateY(-10px)'
+        setTimeout(() => container.remove(), 300)
+      })
+    }
   }, 1500)
 
   return {
