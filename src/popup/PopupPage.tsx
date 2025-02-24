@@ -284,47 +284,51 @@ function analyzeProduct(): AnalysisResult {
       materials: {
         positive: [
           'bamboo', 'wood', 'organic', 'recycled', 'natural', 'cotton', 'wool', 'hemp',
-          'biodegradable', 'compostable', 'renewable'
+          'biodegradable', 'compostable', 'renewable', 'glass', 'metal'
         ],
         negative: [
           'plastic', 'synthetic', 'nylon', 'polyester', 'petroleum', 'pvc',
-          'non-recyclable', 'toxic', 'chemical'
+          'non-recyclable', 'toxic', 'chemical', 'artificial', 'faux'
         ]
       },
       energy: {
         positive: [
           'energy efficient', 'energy star', 'low power', 'solar powered',
-          'rechargeable', 'power saving'
+          'rechargeable', 'power saving', 'eco mode'
         ],
         negative: [
-          'high power consumption', 'battery operated', 'batteries required'
+          'high power consumption', 'battery operated', 'batteries required',
+          'heater', 'gaming', 'high performance'
         ]
       },
       packaging: {
         positive: [
           'minimal packaging', 'recyclable packaging', 'plastic-free packaging',
-          'eco packaging', 'sustainable packaging'
+          'eco packaging', 'sustainable packaging', 'paper packaging'
         ],
         negative: [
-          'excessive packaging', 'plastic packaging', 'non-recyclable packaging'
+          'excessive packaging', 'plastic packaging', 'non-recyclable packaging',
+          'styrofoam', 'bubble wrap'
         ]
       },
       manufacturing: {
         positive: [
           'fair trade', 'local', 'handmade', 'ethically made', 'sustainable factory',
-          'carbon neutral', 'zero waste', 'eco friendly'
+          'carbon neutral', 'zero waste', 'eco friendly', 'certified'
         ],
         negative: [
-          'overseas production', 'mass produced', 'factory made'
+          'overseas production', 'mass produced', 'factory made', 'china',
+          'non-certified'
         ]
       },
       durability: {
         positive: [
           'long lasting', 'durable', 'repairable', 'lifetime warranty',
-          'high quality', 'sturdy'
+          'high quality', 'sturdy', 'reliable'
         ],
         negative: [
-          'disposable', 'single use', 'temporary', 'replacement needed'
+          'disposable', 'single use', 'temporary', 'replacement needed',
+          'fragile', 'breakable'
         ]
       }
     } as const
@@ -374,32 +378,47 @@ function analyzeProduct(): AnalysisResult {
     // Product type specific adjustments
     if (allText.includes('artificial') || allText.includes('faux')) {
       // Artificial plants/decorations
-      categoryScores.durability += 0.3 // Longer lasting than real plants
+      categoryScores.durability += 0.2 // Reduced bonus for durability
+      categoryScores.materials -= 0.3 // Penalty for artificial materials
       factors.push('✓ Long-lasting alternative to natural products')
+      factors.push('✗ Uses artificial materials')
     }
     
     if (allText.includes('electronic') || allText.includes('laptop') || allText.includes('device')) {
       // Electronics
-      categoryScores.energy -= 0.2 // Base penalty for energy consumption
+      categoryScores.energy -= 0.3 // Increased penalty for energy consumption
+      categoryScores.materials -= 0.2 // Penalty for electronic waste
+      factors.push('✗ Electronic waste concern')
       if (!allText.includes('energy efficient') && !allText.includes('energy star')) {
         factors.push('✗ No energy efficiency certification')
       }
     }
 
-    if (allText.includes('book') || allText.includes('ebook')) {
+    if (allText.includes('book') && allText.includes('kindle') || allText.includes('ebook')) {
       // Digital products
       categoryScores.materials += 0.4 // Favor digital over physical
+      categoryScores.energy -= 0.1 // Small penalty for device energy use
       factors.push('✓ Digital format reduces material waste')
     }
 
-    // Calculate final score with weighted categories
+    if (allText.includes('heater') || allText.includes('cooling')) {
+      // High energy consumption devices
+      categoryScores.energy -= 0.4
+      factors.push('✗ High energy consumption product')
+    }
+
+    // Calculate final score with adjusted weights
     score = (
-      categoryScores.materials * 0.3 +
-      categoryScores.energy * 0.2 +
+      categoryScores.materials * 0.35 + // Increased weight for materials
+      categoryScores.energy * 0.25 + // Increased weight for energy
       categoryScores.packaging * 0.15 +
-      categoryScores.manufacturing * 0.2 +
-      categoryScores.durability * 0.15
+      categoryScores.manufacturing * 0.15 + // Reduced manufacturing weight
+      categoryScores.durability * 0.10 // Reduced durability weight
     ) + 0.5 // Normalize to 0-1 range
+
+    // Adjust thresholds
+    if (score > 0.5) score = 0.5 + (score - 0.5) * 0.8 // Compress high scores
+    if (score < 0.5) score = 0.5 - (0.5 - score) * 1.2 // Expand low scores
 
     // Clamp final score
     score = Math.max(0, Math.min(1, score))
