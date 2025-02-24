@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import TestAnalyzer from '@/components/TestAnalyzer'
 
 export default function Home() {
   return (
@@ -39,6 +40,10 @@ export default function Home() {
             Monitor your environmental impact and contribution to sustainability goals.
           </p>
         </div>
+      </section>
+
+      <section className="mb-16">
+        <TestAnalyzer />
       </section>
     </div>
   )

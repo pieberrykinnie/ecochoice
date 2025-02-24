@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react'
+'use client'
+
+import React, { useState, useEffect } from 'react'
 import * as tf from '@tensorflow/tfjs'
 
 interface ProductData {
