@@ -398,13 +398,13 @@ function analyzeProduct(): AnalysisResult {
     border: none;
     background: rgba(255, 255, 255, 0.2);
     color: white;
-    font-size: 18px;
-    line-height: 1;
+    font-size: 20px;
+    line-height: 0;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0;
+    padding-bottom: 2px;
     transition: background-color 0.2s ease;
   `
   closeButton.addEventListener('mouseover', () => {
@@ -467,13 +467,13 @@ function analyzeProduct(): AnalysisResult {
         border: none;
         background: rgba(255, 255, 255, 0.2);
         color: white;
-        font-size: 18px;
-        line-height: 1;
+        font-size: 20px;
+        line-height: 0;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 0;
+        padding-bottom: 2px;
       ">×</button>
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
         <span style="font-size: 18px;">🌱</span>
