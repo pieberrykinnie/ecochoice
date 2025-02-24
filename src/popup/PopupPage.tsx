@@ -274,7 +274,7 @@ function analyzeProduct(): AnalysisResult {
   // Analyze sustainability based on product attributes
   function analyzeSustainability(product: AmazonProduct): SustainabilityAnalysis {
     let score = 0.5 // Base score
-    let factors = []
+    let factors: string[] = []
     
     type CategoryName = 'materials' | 'energy' | 'packaging' | 'manufacturing' | 'durability'
     type CategoryScores = Record<CategoryName, number>
@@ -288,144 +288,7 @@ function analyzeProduct(): AnalysisResult {
       durability: 0
     }
 
-    // Enhanced keywords that indicate sustainability
-    const sustainabilityIndicators = {
-      materials: {
-        positive: [
-          'bamboo', 'organic cotton', 'recycled materials', 'natural fiber', 'wool', 'hemp',
-          'biodegradable materials', 'compostable materials', 'renewable materials',
-          'FSC certified wood', 'reclaimed materials'
-        ],
-        negative: [
-          'single-use plastic', 'non-biodegradable', 'synthetic materials', 'PVC material',
-          'petroleum-based plastic', 'non-recyclable materials', 'toxic materials',
-          'harmful chemicals', 'microplastics'
-        ]
-      },
-      energy: {
-        positive: [
-          'energy star certified', 'low power consumption', 'solar powered',
-          'energy efficient design', 'power saving features', 'eco mode available',
-          'renewable energy usage', 'carbon neutral certified'
-        ],
-        negative: [
-          'high power requirements', 'constant power needed', 'energy intensive operation',
-          'no power saving mode', 'inefficient energy usage', 'high performance mode only'
-        ]
-      },
-      packaging: {
-        positive: [
-          'plastic-free packaging', 'minimal packaging design', 'recyclable packaging',
-          'biodegradable packaging', 'compostable packaging', 'reusable packaging',
-          'zero waste packaging', 'recycled packaging materials'
-        ],
-        negative: [
-          'excessive plastic packaging', 'non-recyclable packaging', 'styrofoam packaging',
-          'single-use packaging', 'over-packaged', 'mixed material packaging'
-        ]
-      },
-      manufacturing: {
-        positive: [
-          'fair trade certified', 'locally manufactured', 'artisan crafted', 
-          'ethically produced', 'sustainable factory', 'carbon neutral production',
-          'zero waste manufacturing', 'renewable energy factory'
-        ],
-        negative: [
-          'overseas mass production', 'non-certified manufacturing', 'high waste process',
-          'toxic manufacturing', 'high pollution production', 'unethical labor practices'
-        ]
-      },
-      durability: {
-        positive: [
-          'long lasting design', 'durable construction', 'repairable product', 
-          'lifetime warranty', 'high quality build', 'replaceable parts',
-          'modular design', 'easy to maintain'
-        ],
-        negative: [
-          'disposable product', 'single use only', 'short lifespan',
-          'non-repairable design', 'frequent replacement needed', 'planned obsolescence'
-        ]
-      }
-    }
-
-    // Context-aware product type detection with refined scoring
-    const productTypes = {
-      artificial_plant: {
-        keywords: ['artificial plant', 'faux plant', 'fake tree', 'artificial tree', 'silk plant'],
-        score_adjustments: {
-          materials: -0.2,  // Reduced penalty for synthetic materials
-          energy: 0.2,     // Bonus for no water/maintenance needs
-          durability: 0.3  // Significant durability bonus
-        },
-        factors: {
-          positive: [
-            'Reduces water consumption',
-            'No pesticides or fertilizers needed',
-            'Long-term alternative to seasonal plants'
-          ],
-          negative: [
-            'Made from synthetic materials',
-            'Non-biodegradable components'
-          ]
-        }
-      },
-      electronic: {
-        keywords: ['laptop', 'computer', 'electronic', 'device', 'gaming', 'processor'],
-        score_adjustments: {
-          materials: -0.3,  // E-waste concern
-          energy: -0.4,    // Significant energy impact
-          durability: -0.2 // Obsolescence concern
-        },
-        factors: {
-          positive: [],
-          negative: [
-            'Contains hazardous electronic components',
-            'High energy consumption device',
-            'Limited lifespan due to tech advancement',
-            'Difficult to recycle completely'
-          ]
-        }
-      },
-      digital_product: {
-        keywords: ['ebook', 'digital book', 'kindle book', 'pdf', 'digital download'],
-        score_adjustments: {
-          materials: 0.5,   // Major bonus for no physical materials
-          energy: 0.3,     // Bonus for minimal energy use
-          packaging: 0.5,  // No physical packaging needed
-          durability: 0.4  // Digital durability bonus
-        },
-        factors: {
-          positive: [
-            'Zero physical materials used',
-            'No shipping or packaging required',
-            'Infinitely reproducible without waste',
-            'Reduces paper consumption'
-          ],
-          negative: [
-            'Minimal energy used for storage/delivery'
-          ]
-        }
-      },
-      heating_cooling: {
-        keywords: ['heater', 'air conditioner', 'thermostat', 'hvac', 'heating', 'cooling'],
-        score_adjustments: {
-          energy: -0.5,    // Major penalty for energy use
-          materials: -0.2,  // Penalty for electronic components
-          durability: -0.1  // Moderate durability concern
-        },
-        factors: {
-          positive: [],
-          negative: [
-            'High energy consumption appliance',
-            'Contains electronic components',
-            'Regular maintenance required',
-            'Limited product lifespan'
-          ]
-        }
-      }
-    }
-
-    // Analyze text content
+    // Analyze text content first
     const allText = [
       product.title,
       product.description,
@@ -434,47 +297,190 @@ function analyzeProduct(): AnalysisResult {
       product.manufacturer
     ].join(' ').toLowerCase()
 
-    // Detect product type first
+    // More specific product type detection with priority order
+    const productTypes = {
+      digital_product: {
+        keywords: ['kindle edition', 'ebook', 'digital book', 'kindle book', 'digital download', 'digital product'],
+        score_adjustments: {
+          materials: 0.8,   // Maximum bonus for no physical materials
+          energy: 0.4,     // Good bonus for minimal energy use
+          packaging: 0.8,  // Maximum bonus for no packaging
+          durability: 0.6  // High bonus for digital durability
+        },
+        factors: {
+          positive: [
+            'Digital format eliminates physical waste',
+            'No physical materials or packaging needed',
+            'Infinitely reproducible without waste',
+            'Zero shipping environmental impact'
+          ],
+          negative: []
+        }
+      },
+      coffee_product: {
+        keywords: ['coffee', 'espresso', 'roasted', 'arabica', 'robusta', 'ground coffee'],
+        score_adjustments: {
+          materials: 0.3,    // Bonus for natural materials
+          energy: 0.1,      // Small bonus for minimal processing
+          packaging: -0.2    // Penalty for typical packaging
+        },
+        factors: {
+          positive: [
+            'Natural and biodegradable materials',
+            'Minimal processing required'
+          ],
+          negative: [
+            'Requires protective packaging',
+            'Transportation environmental impact'
+          ]
+        }
+      },
+      trophy: {
+        keywords: ['trophy', 'award', 'medallion', 'plaque'],
+        score_adjustments: {
+          materials: -0.2,   // Penalty for mixed materials
+          durability: 0.3,   // Bonus for long-lasting
+          manufacturing: -0.1 // Small penalty for manufacturing
+        },
+        factors: {
+          positive: [
+            'Long-lasting durable product',
+            'Reusable design'
+          ],
+          negative: [
+            'Mixed material construction',
+            'Contains non-biodegradable elements'
+          ]
+        }
+      },
+      artificial_plant: {
+        keywords: ['artificial plant', 'faux plant', 'fake tree', 'artificial tree', 'silk plant'],
+        score_adjustments: {
+          materials: -0.3,   // Penalty for synthetic materials
+          energy: 0.3,      // Bonus for no maintenance
+          durability: 0.4    // Major bonus for longevity
+        },
+        factors: {
+          positive: [
+            'No water consumption needed',
+            'No pesticides required',
+            'Long-lasting alternative to live plants'
+          ],
+          negative: [
+            'Made from synthetic materials',
+            'Non-biodegradable components'
+          ]
+        }
+      },
+      electronic: {
+        keywords: ['laptop', 'computer', 'processor', 'gaming laptop', 'alienware'],
+        score_adjustments: {
+          materials: -0.4,   // Major penalty for e-waste
+          energy: -0.5,     // Major penalty for energy use
+          durability: -0.2   // Penalty for obsolescence
+        },
+        factors: {
+          positive: [],
+          negative: [
+            'Contains hazardous electronic components',
+            'High ongoing energy consumption',
+            'Electronic waste concerns',
+            'Limited upgrade potential'
+          ]
+        }
+      },
+      heating_cooling: {
+        keywords: ['heater', 'air conditioner', 'thermostat', 'hvac', 'heating', 'cooling'],
+        score_adjustments: {
+          energy: -0.6,     // Severe penalty for energy use
+          materials: -0.2,   // Penalty for components
+          durability: -0.2   // Penalty for maintenance needs
+        },
+        factors: {
+          positive: [],
+          negative: [
+            'Very high energy consumption',
+            'Contains electronic components',
+            'Regular maintenance required',
+            'Limited product lifespan'
+          ]
+        }
+      }
+    }
+
+    // Detect product type with more specific matching
     let detectedType = null
     for (const [type, config] of Object.entries(productTypes)) {
-      if (config.keywords.some(keyword => allText.includes(keyword))) {
+      if (config.keywords.some(keyword => 
+        allText.includes(keyword) || 
+        product.title.toLowerCase().includes(keyword)
+      )) {
         detectedType = type
         break
       }
     }
 
-    // Apply product-specific adjustments with more impact
+    // Apply product-specific adjustments
     if (detectedType) {
       const typeConfig = productTypes[detectedType as keyof typeof productTypes]
       Object.entries(typeConfig.score_adjustments).forEach(([category, adjustment]) => {
-        categoryScores[category as CategoryName] += adjustment
+        categoryScores[category as CategoryName] = adjustment
       })
-      factors.push(...typeConfig.factors.positive.map(f => `✓ ${f}`))
-      factors.push(...typeConfig.factors.negative.map(f => `✗ ${f}`))
+      factors = [
+        ...typeConfig.factors.positive.map(f => `✓ ${f}`),
+        ...typeConfig.factors.negative.map(f => `✗ ${f}`)
+      ]
     }
 
-    // Analyze sustainability indicators with context
-    Object.entries(sustainabilityIndicators).forEach(([category, keywords]) => {
-      let categoryScore = 0
-      
-      keywords.positive.forEach(keyword => {
-        if (allText.includes(keyword)) {
-          categoryScore += 0.15 // Reduced individual impact
-          factors.push(`✓ Uses ${keyword}`)
-        }
+    // Enhanced sustainability indicators
+    const sustainabilityIndicators = {
+      materials: {
+        positive: [
+          'organic', 'recycled', 'natural fiber', 'biodegradable',
+          'sustainable materials', 'eco-friendly materials'
+        ],
+        negative: [
+          'plastic', 'synthetic', 'non-recyclable', 'toxic'
+        ]
+      },
+      energy: {
+        positive: [
+          'energy efficient', 'low power', 'energy star'
+        ],
+        negative: [
+          'high power', 'energy intensive'
+        ]
+      },
+      packaging: {
+        positive: [
+          'minimal packaging', 'recyclable packaging', 'plastic-free'
+        ],
+        negative: [
+          'excessive packaging', 'plastic packaging'
+        ]
+      }
+    }
+
+    // Add additional factors based on indicators
+    if (!detectedType || factors.length < 3) {
+      Object.entries(sustainabilityIndicators).forEach(([category, keywords]) => {
+        keywords.positive.forEach(keyword => {
+          if (allText.includes(keyword) && !factors.some(f => f.includes(keyword))) {
+            factors.push(`✓ Uses ${keyword}`)
+            categoryScores[category as CategoryName] += 0.2
+          }
+        })
+        
+        keywords.negative.forEach(keyword => {
+          if (allText.includes(keyword) && !factors.some(f => f.includes(keyword))) {
+            factors.push(`✗ Contains ${keyword}`)
+            categoryScores[category as CategoryName] -= 0.3
+          }
+        })
       })
+    }
 
-      keywords.negative.forEach(keyword => {
-        if (allText.includes(keyword)) {
-          categoryScore -= 0.25 // Increased penalty for negative factors
-          factors.push(`✗ Contains ${keyword}`)
-        }
-      })
-
-      categoryScores[category as CategoryName] = Math.max(-1, Math.min(1, categoryScore))
-    })
-
-    // Calculate weighted score with adjusted weights
+    // Calculate final score with category weights
     score = (
       categoryScores.materials * 0.30 +
       categoryScores.energy * 0.25 +
@@ -483,11 +489,9 @@ function analyzeProduct(): AnalysisResult {
       categoryScores.durability * 0.15
     ) + 0.5
 
-    // Apply non-linear scaling to better differentiate scores
-    if (score > 0.5) {
-      score = 0.5 + Math.pow(score - 0.5, 1.2)
-    } else {
-      score = 0.5 - Math.pow(0.5 - score, 0.8)
+    // Ensure digital products get appropriate high scores
+    if (detectedType === 'digital_product') {
+      score = Math.max(score, 0.8) // Minimum 80% for digital products
     }
 
     // Clamp final score
@@ -496,12 +500,11 @@ function analyzeProduct(): AnalysisResult {
     // Prioritize and clean up factors
     factors = Array.from(new Set(factors))
       .sort((a, b) => {
-        // Prioritize positive factors first
         if (a.startsWith('✓') && !b.startsWith('✓')) return -1
         if (!a.startsWith('✓') && b.startsWith('✓')) return 1
         return 0
       })
-      .slice(0, 5)
+      .slice(0, 4) // Limit to 4 most relevant factors
 
     return {
       score,
