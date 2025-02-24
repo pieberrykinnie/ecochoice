@@ -42,12 +42,6 @@ export default function PopupPage() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
       if (!tab.id) return
 
-      // Inject the content script
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: analyzeProduct
-      })
-
       // Update stats with mock data for now
       const newStats = {
         analyzedProducts: stats.analyzedProducts + 1,
@@ -56,6 +50,15 @@ export default function PopupPage() {
       }
       setStats(newStats)
       chrome.storage.local.set({ stats: newStats })
+
+      // Inject the content script and close the popup
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: analyzeProduct
+      })
+      
+      // Close the popup
+      window.close()
       
     } catch (error) {
       console.error('Analysis failed:', error)
@@ -145,26 +148,85 @@ function analyzeProduct() {
     description: document.querySelector('[data-description]')?.textContent || '',
   }
 
+  // Remove any existing badges
+  const existingBadge = document.getElementById('eco-choice-badge')
+  if (existingBadge) {
+    existingBadge.remove()
+  }
+
+  // Create container for notifications
+  const container = document.createElement('div')
+  container.id = 'eco-choice-badge'
+  container.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 2147483647;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `
+  document.body.appendChild(container)
+
   // Add visual feedback
   const badge = document.createElement('div')
   badge.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
     background: #16a34a;
     color: white;
-    padding: 1rem;
+    padding: 12px 16px;
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    z-index: 9999;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
   `
-  badge.textContent = 'EcoChoice: Analyzing...'
-  document.body.appendChild(badge)
+
+  // Add loading spinner
+  const spinner = document.createElement('div')
+  spinner.style.cssText = `
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ffffff;
+    border-top: 2px solid transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  `
+  const style = document.createElement('style')
+  style.textContent = `
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  `
+  document.head.appendChild(style)
+
+  badge.appendChild(spinner)
+  badge.appendChild(document.createTextNode('Analyzing product...'))
+  container.appendChild(badge)
+
+  // Animate in
+  requestAnimationFrame(() => {
+    badge.style.opacity = '1'
+    badge.style.transform = 'translateY(0)'
+  })
 
   // Simulate analysis
   setTimeout(() => {
-    badge.textContent = 'EcoChoice: Product Analysis Complete!'
-    setTimeout(() => badge.remove(), 3000)
+    spinner.remove()
+    badge.textContent = '✓ Analysis Complete!'
+    badge.style.background = '#059669'
+    
+    setTimeout(() => {
+      badge.style.opacity = '0'
+      badge.style.transform = 'translateY(-10px)'
+      setTimeout(() => container.remove(), 300)
+    }, 2000)
   }, 1500)
 
   return productInfo
