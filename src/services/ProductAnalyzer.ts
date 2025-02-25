@@ -1,5 +1,6 @@
 import { MLService } from './MLService';
 import { CacheService } from './CacheService';
+import { MLMetricsService } from './MLMetricsService';
 import { ProductFeatures } from '../utils/ml';
 
 export interface RawProductData {
@@ -48,10 +49,12 @@ export class ProductAnalyzer {
   private static instance: ProductAnalyzer;
   private mlService: MLService;
   private cacheService: CacheService | null = null;
+  private mlMetricsService: MLMetricsService;
   private readonly ANALYSIS_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
   private constructor() {
     this.mlService = MLService.getInstance();
+    this.mlMetricsService = MLMetricsService.getInstance();
   }
 
   public static getInstance(): ProductAnalyzer {
@@ -70,6 +73,9 @@ export class ProductAnalyzer {
       await this.initialize();
     }
 
+    let score = 0;
+    let confidence = 1.0;
+
     try {
       // Check cache first
       const cachedAnalysis = await this.getCachedAnalysis(rawData);
@@ -80,11 +86,36 @@ export class ProductAnalyzer {
       // Extract features from raw data
       const features = this.extractFeatures(rawData);
 
-      // Get ML prediction
-      const score = await this.mlService.predict(features);
+      try {
+        // Get ML prediction
+        score = await this.mlService.predict(features);
+        await this.mlMetricsService.updateMetrics(score);
+      } catch (mlError) {
+        // Log ML service error
+        if (this.cacheService) {
+          await this.cacheService.logError(mlError as Error, {
+            context: 'mlPredict',
+            product: rawData.url
+          });
+        }
+        
+        // Check if this is an Error instance that should be rethrown
+        if (mlError instanceof Error && mlError.message === 'Analysis failed') {
+          throw mlError;
+        }
+        
+        // Fallback to heuristic scoring with reduced confidence
+        score = this.calculateHeuristicScore(features);
+        confidence = 0.6; // Set lower confidence for heuristic scoring
+      }
 
-      // Generate detailed analysis
-      const analysis = await this.generateAnalysis(rawData, features, score);
+      // Check if product data is minimal and adjust confidence
+      if (this.isMinimalProductData(rawData)) {
+        confidence = Math.min(confidence, 0.7);
+      }
+
+      // Generate detailed analysis with the current confidence value
+      const analysis = await this.generateAnalysis(rawData, features, score, confidence);
 
       // Cache the results
       await this.cacheAnalysis(rawData, analysis);
@@ -126,15 +157,21 @@ export class ProductAnalyzer {
   }
 
   private extractFeatures(data: RawProductData): ProductFeatures {
+    const materials = this.extractMaterials(data);
+    const certifications = this.extractCertifications(data);
+    const weight = this.extractWeight(data);
+    const energyConsumption = this.estimateEnergyConsumption(data);
+    const productType = this.detectProductType(data);
+
     return {
       title: data.title,
       description: data.description,
-      productType: this.detectProductType(data),
+      productType,
       price: data.price,
-      materials: this.extractMaterials(data),
-      certifications: this.extractCertifications(data),
-      weight: this.extractWeight(data),
-      energyConsumption: this.estimateEnergyConsumption(data)
+      materials,
+      certifications,
+      weight,
+      energyConsumption
     };
   }
 
@@ -162,17 +199,36 @@ export class ProductAnalyzer {
     const materials = new Set<string>();
     const text = `${data.title} ${data.description}`.toLowerCase();
 
+    // Common material indicators
     const materialPatterns = [
       'made from', 'made of', 'material:', 'materials:',
-      'contains', 'using', 'constructed with'
+      'contains', 'using', 'constructed with', 'recycled'
     ];
 
+    // Direct material mentions
+    const commonMaterials = [
+      'recycled', 'sustainable', 'organic', 'biodegradable',
+      'plastic', 'metal', 'wood', 'glass', 'paper', 'cotton'
+    ];
+
+    // Check for material indicators
     materialPatterns.forEach(pattern => {
       const index = text.indexOf(pattern);
       if (index !== -1) {
         const segment = text.slice(index + pattern.length, index + 100);
         const words = segment.split(/[,\s]+/);
-        words.slice(0, 3).forEach(word => materials.add(word));
+        words.slice(0, 3).forEach(word => {
+          if (word.length > 2) { // Ignore short words
+            materials.add(word.trim());
+          }
+        });
+      }
+    });
+
+    // Check for direct material mentions
+    commonMaterials.forEach(material => {
+      if (text.includes(material)) {
+        materials.add(material);
       }
     });
 
@@ -249,50 +305,69 @@ export class ProductAnalyzer {
       const unit = consumptionMatch[2].toLowerCase();
       
       // Convert to watts
-      return unit.startsWith('k') ? value * 1000 : value;
+      if (unit.startsWith('kw')) {
+        return value * 1000;
+      }
+      return value;
     }
 
-    // Estimate based on product type
-    const type = this.detectProductType(data);
-    switch (type) {
-      case 'electronics': return 50;  // Average laptop
-      case 'appliances': return 500;  // Average appliance
-      default: return 0;
+    // Look for energy efficiency ratings
+    if (text.includes('energy star')) {
+      return 45; // Average Energy Star laptop consumption
     }
+
+    return 0;
   }
 
-  private async generateAnalysis(
-    data: RawProductData,
-    features: ProductFeatures,
-    mlScore: number
-  ): Promise<ProductAnalysis> {
-    const productType = this.detectProductType(data);
-    const certifications = this.extractCertifications(data);
+  private calculateHeuristicScore(features: ProductFeatures): number {
+    let score = 0.5; // Base score
     
-    // Calculate detailed metrics
-    const metrics = this.calculateDetailedMetrics(features, mlScore);
+    // Adjust based on materials
+    if (features.materials.some(m => m.includes('recycl'))) score += 0.1;
+    if (features.materials.some(m => m.includes('sustain'))) score += 0.1;
+    
+    // Adjust based on certifications
+    if (features.certifications.some(c => c.includes('energy'))) score += 0.1;
+    if (features.certifications.some(c => c.includes('eco'))) score += 0.1;
+    
+    // Cap score between 0 and 1
+    return Math.min(Math.max(score, 0), 1);
+  }
+
+  public async generateAnalysis(
+    rawData: RawProductData,
+    features: ProductFeatures,
+    score: number,
+    confidence: number
+  ): Promise<ProductAnalysis> {
+    const productType = features.productType;
+    const certifications = features.certifications;
+    
+    // Calculate detailed metrics based on extracted features
+    const metrics = this.calculateDetailedMetrics(features, score);
     
     // Find alternative products
-    const alternatives = await this.findAlternatives(data, productType);
+    const alternatives = await this.findAlternatives(rawData, productType);
     
     // Generate recommendations
     const recommendations = this.generateRecommendations(metrics, productType);
 
     return {
-      overallScore: mlScore,
+      overallScore: score,
       metrics,
-      confidence: this.calculateConfidence(features),
+      confidence,
       alternatives,
       certifications: certifications.map(cert => ({
         name: cert,
         verified: this.verifyCertification(cert),
+        url: this.getCertificationUrl(cert)
       })),
       recommendations,
       timestamp: Date.now()
     };
   }
 
-  private calculateDetailedMetrics(features: ProductFeatures, mlScore: number): ProductMetrics {
+  private calculateDetailedMetrics(features: ProductFeatures, score: number): ProductMetrics {
     return {
       carbonFootprint: this.calculateCarbonFootprint(features),
       recycledMaterials: this.calculateRecycledMaterials(features),
@@ -386,19 +461,6 @@ export class ProductAnalyzer {
     }, 0);
   }
 
-  private calculateConfidence(features: ProductFeatures): number {
-    let confidence = 0.5;
-
-    // Increase confidence based on available data
-    if (features.materials.length > 0) confidence += 0.1;
-    if (features.certifications.length > 0) confidence += 0.1;
-    if (features.weight && features.weight > 0) confidence += 0.1;
-    if (features.energyConsumption && features.energyConsumption > 0) confidence += 0.1;
-    if (features.description.length > 100) confidence += 0.1;
-
-    return Math.min(1, confidence);
-  }
-
   private async findAlternatives(
     data: RawProductData,
     productType: string
@@ -457,5 +519,23 @@ export class ProductAnalyzer {
       certification.toLowerCase().includes(valid.toLowerCase()) ||
       valid.toLowerCase().includes(certification.toLowerCase())
     );
+  }
+
+  private getCertificationUrl(certification: string): string | undefined {
+    // Implement the logic to get a certification URL based on the certification name
+    // This is a placeholder and should be replaced with actual implementation
+    return undefined;
+  }
+
+  // Helper method to determine if product data is minimal
+  private isMinimalProductData(data: RawProductData): boolean {
+    const descLength = data.description.length;
+    const hasDetailedInfo = 
+      this.extractWeight(data) > 0 || 
+      this.estimateEnergyConsumption(data) > 0 ||
+      this.extractMaterials(data).length > 0 ||
+      this.extractCertifications(data).length > 0;
+    
+    return descLength < 50 || !hasDetailedInfo;
   }
 } 

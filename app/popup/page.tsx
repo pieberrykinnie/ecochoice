@@ -1,34 +1,55 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { MLMetrics } from '../../src/services/MLMetricsService'
+import { Line } from 'react-chartjs-2'
 
 interface TabInfo {
-  url: string
-  title: string
+  id?: number;
+  url: string;
+  title: string;
+}
+
+interface Stats {
+  analyzedProducts: number
+  averageScore: number
+  totalCO2Saved: number
 }
 
 export default function PopupPage() {
   const [currentTab, setCurrentTab] = useState<TabInfo | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<Stats>({
     analyzedProducts: 0,
     averageScore: 0,
     totalCO2Saved: 0
   })
+  const [mlMetrics, setMLMetrics] = useState<MLMetrics | null>(null)
 
   useEffect(() => {
-    // In production, this will use chrome.tabs.query
-    // For development, we'll simulate it
-    setCurrentTab({
-      url: 'https://example.com/product',
-      title: 'Example Product'
+    // Get current tab info
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        setCurrentTab({
+          url: tabs[0].url || '',
+          title: tabs[0].title || ''
+        })
+      }
     })
 
     // Load saved stats
-    const savedStats = localStorage.getItem('ecoChoiceStats')
-    if (savedStats) {
-      setStats(JSON.parse(savedStats))
-    }
+    chrome.storage.local.get('stats', (data) => {
+      if (data.stats) {
+        setStats(data.stats)
+      }
+    })
+
+    // Load ML metrics
+    chrome.runtime.sendMessage({ action: 'getMLMetrics' }, (response) => {
+      if (response) {
+        setMLMetrics(response)
+      }
+    })
   }, [])
 
   const handleAnalyzeClick = async () => {
@@ -36,33 +57,106 @@ export default function PopupPage() {
     
     setIsAnalyzing(true)
     try {
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: currentTab.url,
-          title: currentTab.title
-        })
-      })
+      chrome.tabs.sendMessage(
+        currentTab.id as number,
+        { action: 'ANALYZE_PRODUCT' },
+        async (response) => {
+          if (response?.productInfo) {
+            const result = await chrome.runtime.sendMessage({
+              action: 'analyzeProduct',
+              product: response.productInfo
+            })
 
-      if (!response.ok) {
-        throw new Error('Failed to analyze page')
-      }
+            // Update stats
+            chrome.runtime.sendMessage({
+              action: 'UPDATE_STATS',
+              score: result.score
+            }, (newStats) => {
+              setStats(newStats)
+            })
 
-      // Update stats
-      const newStats = {
-        analyzedProducts: stats.analyzedProducts + 1,
-        averageScore: (stats.averageScore * stats.analyzedProducts + 0.85) / (stats.analyzedProducts + 1),
-        totalCO2Saved: stats.totalCO2Saved + 2.5
-      }
-      setStats(newStats)
-      localStorage.setItem('ecoChoiceStats', JSON.stringify(newStats))
-
+            // Update ML metrics
+            if (result.metrics) {
+              setMLMetrics(result.metrics)
+            }
+          }
+        }
+      )
     } catch (error) {
       console.error('Analysis failed:', error)
     } finally {
       setIsAnalyzing(false)
     }
+  }
+
+  const renderMLMetrics = () => {
+    if (!mlMetrics) return null
+
+    const chartData = {
+      labels: mlMetrics.trainingHistory.map(h => 
+        new Date(h.timestamp).toLocaleDateString()
+      ),
+      datasets: [
+        {
+          label: 'Accuracy',
+          data: mlMetrics.trainingHistory.map(h => h.accuracy),
+          borderColor: 'rgb(75, 192, 192)',
+          tension: 0.1
+        },
+        {
+          label: 'Loss',
+          data: mlMetrics.trainingHistory.map(h => h.loss),
+          borderColor: 'rgb(255, 99, 132)',
+          tension: 0.1
+        }
+      ]
+    }
+
+    return (
+      <div className="mt-6 p-4 bg-white rounded-lg shadow-sm">
+        <h2 className="text-lg font-semibold mb-3">ML Model Performance</h2>
+        
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <span className="text-sm text-gray-600">Accuracy</span>
+            <p className="font-medium">{(mlMetrics.accuracyScore * 100).toFixed(1)}%</p>
+          </div>
+          <div>
+            <span className="text-sm text-gray-600">Data Points</span>
+            <p className="font-medium">{mlMetrics.dataPoints}</p>
+          </div>
+          <div>
+            <span className="text-sm text-gray-600">Total Predictions</span>
+            <p className="font-medium">{mlMetrics.totalPredictions}</p>
+          </div>
+          <div>
+            <span className="text-sm text-gray-600">Last Training</span>
+            <p className="font-medium">
+              {new Date(mlMetrics.lastTrainingDate).toLocaleDateString()}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <h3 className="text-sm font-medium mb-2">Training History</h3>
+          <div className="h-48">
+            <Line
+              data={chartData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                  y: {
+                    beginAtZero: true,
+                    max: 1
+                  }
+                }
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -122,6 +216,8 @@ export default function PopupPage() {
           </div>
         </div>
       </div>
+
+      {renderMLMetrics()}
 
       <footer className="mt-6 pt-4 border-t text-center">
         <a

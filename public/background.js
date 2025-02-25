@@ -1,17 +1,25 @@
 import * as tf from '@tensorflow/tfjs';
 import { MLService } from '../src/services/MLService';
+import { MLMetricsService } from '../src/services/MLMetricsService';
 
-// Initialize ML service
+// Initialize services
 let mlService = null;
+let mlMetricsService = null;
 
-async function initializeML() {
+async function initializeServices() {
   mlService = MLService.getInstance();
-  await mlService.initialize();
-  console.log('ML service initialized');
+  mlMetricsService = MLMetricsService.getInstance();
+  
+  await Promise.all([
+    mlService.initialize(),
+    mlMetricsService.initialize()
+  ]);
+  
+  console.log('ML services initialized');
 }
 
 // Initialize when extension starts
-initializeML();
+initializeServices();
 
 // Keywords and patterns for sustainability analysis
 const SUSTAINABILITY_PATTERNS = {
@@ -78,31 +86,34 @@ async function analyzeProduct(product) {
 
     // Get ML prediction if available
     let mlScore = 0.5;
+    let confidence = 'low';
+    
     if (mlService) {
       try {
         mlScore = await mlService.predict(productFeatures);
+        confidence = 'high';
+        
+        // Update metrics
+        await mlMetricsService?.updateMetrics(mlScore);
+        
+        // Add to training data if confidence is high
+        const basicScore = calculateBasicScore(`${product.name} ${product.description}`);
+        if (Math.abs(mlScore - basicScore) < 0.3) { // Only use as training data if scores are somewhat similar
+          await mlService.addTrainingData(productFeatures, (mlScore + basicScore) / 2);
+        }
       } catch (error) {
         console.warn('ML prediction failed:', error);
+        mlScore = calculateBasicScore(`${product.name} ${product.description}`);
       }
-    }
-
-    // Calculate basic score as fallback
-    const basicScore = calculateBasicScore(
-      `${product.name} ${product.description}`
-    );
-
-    // Combine scores (giving more weight to ML score when available)
-    const finalScore = mlService ? (0.7 * mlScore + 0.3 * basicScore) : basicScore;
-
-    // Add to training data
-    if (mlService) {
-      await mlService.addTrainingData(productFeatures, finalScore);
+    } else {
+      mlScore = calculateBasicScore(`${product.name} ${product.description}`);
     }
 
     return {
-      score: finalScore,
-      confidence: mlService ? 'high' : 'medium',
-      timestamp: Date.now()
+      score: mlScore,
+      confidence,
+      timestamp: Date.now(),
+      metrics: await mlMetricsService?.getMetrics()
     };
   } catch (error) {
     console.error('Error analyzing product:', error);
@@ -230,6 +241,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true; // Will respond asynchronously
   }
+  
+  if (request.action === 'getMLMetrics') {
+    mlMetricsService?.getMetrics().then(metrics => {
+      sendResponse(metrics);
+    });
+    return true;
+  }
 });
 
 // Update stats when analysis is complete
@@ -248,24 +266,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           (currentStats.averageScore * currentStats.analyzedProducts + request.score) /
           (currentStats.analyzedProducts + 1)
         ),
-        totalCO2Saved: currentStats.totalCO2Saved + (request.score > 0.7 ? 2.5 : 1.0)
+        totalCO2Saved: currentStats.totalCO2Saved + (request.score > 0.7 ? 2.5 : 0)
       };
 
       chrome.storage.local.set({ stats: newStats });
-
-      // Show notification if score is below threshold
-      chrome.storage.local.get('settings', (settingsData) => {
-        const settings = settingsData.settings || { sustainabilityThreshold: 0.7 };
-        if (request.score < settings.sustainabilityThreshold) {
-          chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'icons/icon128.png',
-            title: 'Low Sustainability Score',
-            message: 'We found some more sustainable alternatives for this product!'
-          });
-        }
-      });
+      sendResponse(newStats);
     });
+    return true;
   }
 });
 
